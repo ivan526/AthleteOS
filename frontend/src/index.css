@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', 'Inter', system-ui, sans-serif;
+  background-color: #F4FAF7;
+  color: #10231A;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  max-width: 480px;
+  margin: 0 auto;
+  background-color: #F4FAF7;
+}
+
+/* 自定义工具类 */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .card-shadow {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+}
+
+/* 全局组件样式 */
+@layer components {
+  .card {
+    @apply bg-white rounded-card p-5 card-shadow border border-border/60;
+  }
+
+  .btn-primary {
+    @apply bg-primary text-white rounded-button h-[52px] px-6 font-medium flex items-center justify-center transition-all hover:bg-primary/90 active:bg-primary-dark;
+  }
+
+  .btn-secondary {
+    @apply bg-white border border-primary text-primary-dark rounded-button h-[52px] px-6 font-medium flex items-center justify-center transition-all hover:bg-background-weak active:bg-background-weak/80;
+  }
+
+  .tag {
+    @apply bg-background-weak text-primary-dark px-3 py-1 rounded-tag text-sm font-medium;
+  }
+
+  .tag-warning {
+    @apply bg-[#FFF4DE] text-[#B86600] px-3 py-1 rounded-tag text-sm font-medium;
+  }
+
+  .tag-danger {
+    @apply bg-[#FDECEC] text-[#C74343] px-3 py-1 rounded-tag text-sm font-medium;
+  }
+
+  .tag-info {
+    @apply bg-[#EFF6FF] text-[#1E40AF] px-3 py-1 rounded-tag text-sm font-medium;
+  }
+}

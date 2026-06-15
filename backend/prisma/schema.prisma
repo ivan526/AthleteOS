@@ -1,0 +1,207 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 用户表
+model User {
+  id                  String                @id @default(uuid())
+  email               String?               @unique
+  name                String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  // 关联
+  athleteProfile      AthleteProfile?
+  connectedAccounts   ConnectedAccount[]
+  dailyAthleteStates  DailyAthleteState[]
+  dailyRecommendations DailyRecommendation[]
+  userFeedbacks       UserFeedback[]
+  weeklyReviews       WeeklyReview[]
+}
+
+// 运动员档案
+model AthleteProfile {
+  id                  String                @id @default(uuid())
+  userId              String                @unique
+  primarySport        String                @default("running") // running, cycling, swimming, etc.
+  weeklyAvailableDays Int                   @default(5)
+  preferredSports     String[]              @default(["running"])
+  primaryGoal         String? // e.g., "半马 1:40"
+  goalDate            DateTime?
+  goalTime            Int? // in seconds
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  // 关联
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 已连接账户 (Intervals.icu)
+model ConnectedAccount {
+  id                  String                @id @default(uuid())
+  userId              String
+  provider            String                @default("intervals.icu")
+  athleteId           String                // Intervals.icu athlete ID
+  apiKey              String                // Intervals.icu API key
+  lastSyncAt          DateTime?
+  syncStatus          String                @default("idle") // idle, syncing, success, failed
+  syncMessage         String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  // 关联
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activities          Activity[]
+
+  @@unique([userId, provider])
+}
+
+// 训练活动记录 (从Intervals.icu同步)
+model Activity {
+  id                  String                @id @default(uuid())
+  connectedAccountId  String
+  providerActivityId  String                // Intervals.icu activity ID
+  sport               String                // running, cycling, swimming, strength, other
+  startTime           DateTime
+  durationSeconds     Int
+  distanceMeters      Float?
+  tss                 Float? // Training Stress Score
+  intensityFactor     Float?
+  avgHr               Float? // Average Heart Rate
+  maxHr               Float? // Maximum Heart Rate
+  avgPower            Float? // Average Power
+  normalizedPower     Float? // Normalized Power
+  avgPace             Float? // Average Pace in seconds per km
+  elevationGain       Float? // Elevation Gain in meters
+  rawData             Json? // Raw API response
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  // 关联
+  connectedAccount    ConnectedAccount      @relation(fields: [connectedAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([connectedAccountId, providerActivityId])
+}
+
+// 每日运动员状态
+model DailyAthleteState {
+  id                  String                @id @default(uuid())
+  userId              String
+  date                DateTime
+  dataLevel           String                // A, B, C, D
+  dataQuality         Json // 数据质量详情
+  fitness             Float? // CTL (Chronic Training Load)
+  fatigue             Float? // ATL (Acute Training Load)
+  form                Float? // Form = CTL - ATL
+  sleepScore          Float? // 0-100
+  hrvScore            Float? // 0-100
+  acwr                Float? // Acute Chronic Workload Ratio
+  monotony            Float? // 训练单调性
+  strain              Float?
+  adherence           Float? // 训练完成率 0-1
+  subjectiveFatigue   Int? // 主观疲劳度 1-10
+  trainingCapacity    Int // 0-100
+  capacityStatus      String // Ready To Push, Train Normally, Reduce Intensity, Recovery Required
+  trainingRiskScore   Float // 0-1
+  trainingRiskLevel   String // low, moderate, elevated, high_caution
+  confidence          Float // 0-1
+  stateJson           Json? // 完整状态数据
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  // 关联
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+}
+
+// 每日训练建议
+model DailyRecommendation {
+  id                  String                @id @default(uuid())
+  userId              String
+  date                DateTime
+  trainingCapacity    Int
+  capacityStatus      String
+  trainingRiskScore   Float
+  trainingRiskLevel   String
+  goalPhase           String? // build, peak, taper, etc.
+  dataLevel           String
+  availableTimeMinutes Int @default(60)
+  preferredSport      String
+  sport               String
+  type                String // workout type: tempo_run, easy_run, etc.
+  title               String // 展示标题: 节奏跑, 轻松跑, etc.
+  durationMinutes     Int
+  expectedTss         Float
+  intensity           String // easy, moderate, high, etc.
+  structure           Json // 训练结构: warmup, main_set, cooldown
+  dayType             String // hard, moderate, easy, recovery
+  hardSafetyTriggered Boolean @default(false)
+  triggeredRules      Json? // 触发的安全规则列表
+  evidence            Json? // 决策依据
+  userFriendlyReason  String // 用户友好的解释
+  technicalReason     String // 技术解释
+  confidence          Float // 0-1
+  status              String @default("active") // active, adjusted, completed, skipped
+  originalRecommendationId String? // 如果是调整后的建议，关联原建议
+  decisionJson        Json // 完整决策数据
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  // 关联
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userFeedbacks       UserFeedback[]
+
+  @@unique([userId, date])
+}
+
+// 用户反馈记录
+model UserFeedback {
+  id                  String                @id @default(uuid())
+  userId              String
+  recommendationId    String
+  feedbackType        String // too_tired, not_enough_time, pain_or_discomfort, etc.
+  subjectiveFatigue   Int? // 1-10
+  pain                Boolean @default(false)
+  painArea            String?
+  availableTimeMinutes Int?
+  preferredSport      String?
+  note                String?
+  adjustedRecommendationId String?
+  createdAt           DateTime              @default(now())
+
+  // 关联
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recommendation      DailyRecommendation   @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+}
+
+// 周复盘记录
+model WeeklyReview {
+  id                  String                @id @default(uuid())
+  userId              String
+  weekStart           DateTime
+  weekEnd             DateTime
+  summary             String
+  adherence           Float // 0-1
+  weeklyTss           Float
+  loadChangeVsLastWeek Float // 百分比
+  trainingRiskLevel   String
+  highlights          Json // 亮点数组
+  warnings            Json // 警告数组
+  nextWeekRecommendation String
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  // 关联
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
+}
