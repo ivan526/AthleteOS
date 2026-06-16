@@ -2,133 +2,10 @@ import { useState, useEffect } from 'react'
 import { Calendar, ChevronRight, TrendingUp, ChevronLeft, ChevronRight as ChevronRightIcon } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import Layout from '../components/Layout'
-
-// 模拟历史活动数据
-const mockActivities = [
-  {
-    id: '1',
-    date: '2026-06-14',
-    type: '跑步',
-    name: '节奏跑',
-    duration: '50 分钟',
-    distance: '10.2 公里',
-    tss: 65,
-    intensity: '中等强度',
-  },
-  {
-    id: '2',
-    date: '2026-06-13',
-    type: '跑步',
-    name: '轻松跑',
-    duration: '35 分钟',
-    distance: '6.8 公里',
-    tss: 32,
-    intensity: '低强度',
-  },
-  {
-    id: '3',
-    date: '2026-06-12',
-    type: '力量训练',
-    name: '核心训练',
-    duration: '45 分钟',
-    distance: '-',
-    tss: 40,
-    intensity: '中等强度',
-  },
-  {
-    id: '4',
-    date: '2026-06-11',
-    type: '跑步',
-    name: '间歇跑',
-    duration: '65 分钟',
-    distance: '12.5 公里',
-    tss: 82,
-    intensity: '高强度',
-  },
-  {
-    id: '5',
-    date: '2026-06-10',
-    type: '跑步',
-    name: '轻松跑',
-    duration: '30 分钟',
-    distance: '5.5 公里',
-    tss: 28,
-    intensity: '低强度',
-  },
-  {
-    id: '6',
-    date: '2026-06-09',
-    type: '休息',
-    name: '休息日',
-    duration: '-',
-    distance: '-',
-    tss: 0,
-    intensity: '-',
-  },
-  {
-    id: '7',
-    date: '2026-06-08',
-    type: '跑步',
-    name: '长距离慢跑',
-    duration: '90 分钟',
-    distance: '18.3 公里',
-    tss: 95,
-    intensity: '中等强度',
-  },
-  {
-    id: '8',
-    date: '2026-06-07',
-    type: '骑行',
-    name: '户外骑行',
-    duration: '80 分钟',
-    distance: '28.5 公里',
-    tss: 72,
-    intensity: '中等强度',
-  },
-  {
-    id: '9',
-    date: '2026-06-06',
-    type: '跑步',
-    name: '轻松跑',
-    duration: '40 分钟',
-    distance: '7.2 公里',
-    tss: 38,
-    intensity: '低强度',
-  },
-  {
-    id: '10',
-    date: '2026-06-05',
-    type: '跑步',
-    name: '阈值跑',
-    duration: '55 分钟',
-    distance: '11.5 公里',
-    tss: 78,
-    intensity: '高强度',
-  },
-  {
-    id: '11',
-    date: '2026-06-04',
-    type: '休息',
-    name: '休息日',
-    duration: '-',
-    distance: '-',
-    tss: 0,
-    intensity: '-',
-  },
-  {
-    id: '12',
-    date: '2026-06-03',
-    type: '跑步',
-    name: '长距离慢跑',
-    duration: '100 分钟',
-    distance: '20.5 公里',
-    tss: 105,
-    intensity: '中等强度',
-  },
-]
+import { getActivities, type Activity } from '../lib/api'
 
 // 生成日历数据
-const generateCalendarData = (year: number, month: number) => {
+const generateCalendarData = (year: number, month: number, activities: Activity[]) => {
   const firstDay = new Date(year, month, 1)
   const lastDay = new Date(year, month + 1, 0)
   const daysInMonth = lastDay.getDate()
@@ -144,7 +21,7 @@ const generateCalendarData = (year: number, month: number) => {
   // 添加当月天数
   for (let i = 1; i <= daysInMonth; i++) {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`
-    const activity = mockActivities.find(a => a.date === dateStr)
+    const activity = activities.find(a => a.date === dateStr)
 
     let type = 'rest'
     let intensity = 'low'
@@ -186,16 +63,37 @@ const weeklyStats = [
 
 const History = () => {
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month'>('week')
-  const [activities] = useState(mockActivities)
+  const [activities, setActivities] = useState<Activity[]>([])
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [calendarData, setCalendarData] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
+
+  // 加载活动数据
+  useEffect(() => {
+    const fetchActivities = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const data = await getActivities(1, 100) // 加载最近100条活动
+        setActivities(data)
+      } catch (err: any) {
+        console.error('加载活动数据失败:', err)
+        setError(err.message || '加载失败，请稍后重试')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchActivities()
+  }, [])
 
   useEffect(() => {
     const year = currentMonth.getFullYear()
     const month = currentMonth.getMonth()
-    setCalendarData(generateCalendarData(year, month))
-  }, [currentMonth])
+    setCalendarData(generateCalendarData(year, month, activities))
+  }, [currentMonth, activities])
 
   const monthNames = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月']
 
@@ -233,6 +131,41 @@ const History = () => {
       default:
         return '📅'
     }
+  }
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="p-4">
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold text-text-primary mb-1">历史</h1>
+            <p className="text-text-secondary">查看你的训练记录和负荷趋势</p>
+          </div>
+          <div className="flex items-center justify-center h-[60vh]">
+            <p className="text-text-secondary">加载中...</p>
+          </div>
+        </div>
+      </Layout>
+    )
+  }
+
+  if (error) {
+    return (
+      <Layout>
+        <div className="p-4">
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold text-text-primary mb-1">历史</h1>
+            <p className="text-text-secondary">查看你的训练记录和负荷趋势</p>
+          </div>
+          <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
+            <p className="text-text-secondary">{error}</p>
+            <button className="btn-primary" onClick={() => window.location.reload()}>
+              重新加载
+            </button>
+          </div>
+        </div>
+      </Layout>
+    )
   }
 
   return (

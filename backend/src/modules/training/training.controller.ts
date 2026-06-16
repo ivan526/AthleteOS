@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Body, Request, Logger } from '@nestjs/common';
+import { Controller, Get, Post, Body, Request, Logger, Query, Param } from '@nestjs/common';
 import { DailyStateBuilderService } from '../athlete/daily-state-builder.service';
 import { TrainingDecisionEngineService } from './training-decision-engine.service';
 import { FeedbackType } from './types';
+import { PrismaService } from '../../shared/prisma/prisma.service';
 
 /**
  * 训练相关API控制器
@@ -14,6 +15,7 @@ export class TrainingController {
   constructor(
     private dailyStateBuilder: DailyStateBuilderService,
     private decisionEngine: TrainingDecisionEngineService,
+    private prisma: PrismaService,
   ) {}
 
   /**
@@ -83,62 +85,7 @@ export class TrainingController {
       };
     } catch (error) {
       this.logger.error('获取今日训练数据失败', error);
-      // 返回模拟数据
-      return {
-        date: new Date().toISOString().split('T')[0],
-        training_capacity: {
-          score: 76,
-          status: 'Train Normally',
-          confidence: 0.89,
-          data_quality: 'medium',
-          confidence_label: '建议可信度较高',
-          trend_vs_yesterday: '+4',
-        },
-        training_risk: {
-          level: 'low',
-          label: '训练风险较低',
-        },
-        recommendation: {
-          id: 'rec_mock_001',
-          sport: 'running',
-          type: 'tempo_run',
-          title: '节奏跑',
-          duration_minutes: 50,
-          expected_tss: 65,
-          intensity: 'moderate',
-          structure: {
-            warmup: '轻松跑 10 分钟',
-            main_set: '中等偏高强度跑 30 分钟（目标配速+5秒）',
-            cooldown: '轻松跑 10 分钟'
-          }
-        },
-        explanation: {
-          simple: '今天状态稳定，适合完成计划训练。',
-          reasons: [
-            '近期训练负荷稳定',
-            '当前疲劳处于可接受范围',
-            '建议可信度较高'
-          ],
-          technical: {
-            form: -9,
-            acwr: 1.12,
-            monotony: 1.7,
-            sleep_score: '暂未接入',
-            hrv_score: '暂未接入',
-            confidence: 0.89,
-            triggered_rules: [],
-          },
-        },
-        feedback_options: [
-          'too_tired',
-          'not_enough_time',
-          'pain_or_discomfort',
-          'change_sport',
-          'skip_today',
-          'completed_as_planned',
-        ],
-        disclaimer: 'AthleteOS 提供训练建议仅供参考，不构成医疗建议。',
-      };
+      throw error;
     }
   }
 
@@ -196,6 +143,217 @@ export class TrainingController {
         adjustment_reason: result.decision.adjustmentReason,
       },
     };
+  }
+
+  /**
+   * 获取历史活动列表
+   */
+  @Get('activities')
+  async getActivities(
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 30,
+    @Request() req: any,
+  ) {
+    // TODO: 替换为真实用户ID
+    const userId = 'b23d32aa-870a-449e-8572-b1fccd8c00e0';
+
+    const activities = await this.prisma.activity.findMany({
+      where: { userId },
+      orderBy: { startDate: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    // 转换为前端需要的格式
+    return activities.map(activity => ({
+      id: activity.id,
+      date: activity.startDate.toISOString().split('T')[0],
+      type: activity.type,
+      name: activity.name,
+      duration: `${Math.round(activity.duration / 60)} 分钟`,
+      distance: activity.distance ? `${(activity.distance / 1000).toFixed(1)} 公里` : '-',
+      tss: activity.tss || 0,
+      intensity: this.getIntensityLabel(activity.tss || 0),
+      avgPace: activity.avgPace ? `${activity.avgPace.toFixed(2)} /km` : undefined,
+      avgHr: activity.avgHr,
+      maxHr: activity.maxHr,
+      avgCadence: activity.avgCadence,
+      elevationGain: activity.elevationGain ? `${Math.round(activity.elevationGain)} 米` : undefined,
+      calories: activity.calories,
+      notes: activity.description,
+    }));
+  }
+
+  /**
+   * 获取活动详情
+   */
+  @Get('activities/:id')
+  async getActivityDetail(
+    @Request() req: any,
+    @Param('id') id: string,
+  ) {
+    // TODO: 替换为真实用户ID
+    const userId = 'b23d32aa-870a-449e-8572-b1fccd8c00e0';
+
+    const activity = await this.prisma.activity.findUnique({
+      where: { id, userId },
+    });
+
+    if (!activity) {
+      throw new Error('活动不存在');
+    }
+
+    return {
+      id: activity.id,
+      date: activity.startDate.toISOString().split('T')[0],
+      type: activity.type,
+      name: activity.name,
+      duration: `${Math.round(activity.duration / 60)} 分钟`,
+      distance: activity.distance ? `${(activity.distance / 1000).toFixed(1)} 公里` : '-',
+      tss: activity.tss || 0,
+      intensity: this.getIntensityLabel(activity.tss || 0),
+      avgPace: activity.avgPace ? `${activity.avgPace.toFixed(2)} /km` : undefined,
+      avgHr: activity.avgHr,
+      maxHr: activity.maxHr,
+      avgCadence: activity.avgCadence,
+      elevationGain: activity.elevationGain ? `${Math.round(activity.elevationGain)} 米` : undefined,
+      calories: activity.calories,
+      notes: activity.description,
+      splits: [], // TODO: 实现分段数据
+    };
+  }
+
+  /**
+   * 获取周复盘数据
+   */
+  @Get('weekly-review')
+  async getWeeklyReview(
+    @Query('weekOffset') weekOffset: number = 0,
+    @Request() req: any,
+  ) {
+    // TODO: 替换为真实用户ID
+    const userId = 'b23d32aa-870a-449e-8572-b1fccd8c00e0';
+
+    // 计算周的起止日期（周一到周日）
+    const baseDate = new Date();
+    const currentDay = baseDate.getDay();
+    const monday = new Date(baseDate);
+    monday.setDate(baseDate.getDate() - currentDay + 1 - (weekOffset * 7));
+
+    const weekStart = new Date(monday);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(monday);
+    weekEnd.setDate(monday.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+
+    // 查询本周的所有活动
+    const activities = await this.prisma.activity.findMany({
+      where: {
+        userId,
+        startDate: {
+          gte: weekStart,
+          lte: weekEnd,
+        },
+      },
+      orderBy: { startDate: 'asc' },
+    });
+
+    // 计算周统计
+    const totalTss = activities.reduce((sum, act) => sum + (act.tss || 0), 0);
+    const trainingDays = activities.filter(act => (act.tss || 0) > 0).length;
+    const adherence = trainingDays / 7;
+
+    // 查询上周数据对比
+    const lastWeekStart = new Date(weekStart);
+    lastWeekStart.setDate(weekStart.getDate() - 7);
+    const lastWeekEnd = new Date(weekEnd);
+    lastWeekEnd.setDate(weekEnd.getDate() - 7);
+
+    const lastWeekActivities = await this.prisma.activity.findMany({
+      where: {
+        userId,
+        startDate: {
+          gte: lastWeekStart,
+          lte: lastWeekEnd,
+        },
+      },
+    });
+
+    const lastWeekTss = lastWeekActivities.reduce((sum, act) => sum + (act.tss || 0), 0);
+    const loadChange = lastWeekTss > 0 ? (totalTss - lastWeekTss) / lastWeekTss : 0;
+
+    // 生成每日数据
+    const dailyStats = [];
+    for (let i = 0; i < 7; i++) {
+      const dayDate = new Date(monday);
+      dayDate.setDate(monday.getDate() + i);
+      const dayStr = `${dayDate.getMonth() + 1}月${dayDate.getDate()}日`;
+
+      const dayActivities = activities.filter(act => {
+        const actDate = new Date(act.startDate);
+        return actDate.getDate() === dayDate.getDate() &&
+               actDate.getMonth() === dayDate.getMonth();
+      });
+
+      const dayTss = dayActivities.reduce((sum, act) => sum + (act.tss || 0), 0);
+
+      dailyStats.push({
+        date: dayStr,
+        tss: dayTss,
+        type: dayTss > 0 ? 'training' : 'rest',
+      });
+    }
+
+    // 风险评估
+    const trainingRiskLevel = totalTss > lastWeekTss * 1.2
+      ? 'moderate'
+      : totalTss > lastWeekTss * 1.5
+        ? 'elevated'
+        : 'low';
+
+    // 生成总结和建议
+    let summary = '本周训练负荷稳定，完成情况良好。';
+    let highlights = [
+      `完成 ${trainingDays} 次训练，完成率 ${Math.round(adherence * 100)}%`,
+      `周总TSS: ${totalTss}`,
+    ];
+    let warnings: string[] = [];
+
+    if (loadChange > 0.1) {
+      summary = '本周训练负荷有所上升，整体完成情况良好。';
+      highlights.push(`周负荷增长 ${Math.round(loadChange * 100)}%`);
+      if (loadChange > 0.2) {
+        warnings.push('周负荷增长偏快，注意充分恢复');
+        warnings.push('建议下周适当控制高强度训练次数');
+      }
+    } else if (loadChange < -0.1) {
+      summary = '本周训练负荷有所下降，以恢复调整为主。';
+      highlights.push(`周负荷下降 ${Math.round(Math.abs(loadChange) * 100)}%`);
+      warnings.push('下周可以适当增加训练负荷');
+      warnings.push('保持规律的训练节奏更有利于进步');
+    }
+
+    return {
+      weekStart: weekStart.toISOString().split('T')[0],
+      weekEnd: weekEnd.toISOString().split('T')[0],
+      summary,
+      adherence,
+      weeklyTss: totalTss,
+      loadChangeVsLastWeek: loadChange,
+      trainingRiskLevel,
+      highlights,
+      warnings,
+      dailyStats,
+    };
+  }
+
+  /**
+   * 获取强度标签
+   */
+  private getIntensityLabel(tss: number): string {
+    if (tss < 30) return '低强度';
+    if (tss < 60) return '中等强度';
+    return '高强度';
   }
 
   /**
