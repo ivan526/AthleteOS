@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Info, Check, AlertCircle } from 'lucide-react'
-import { syncIntervals } from '../lib/api'
+import { syncIntervals, updateSettings } from '../lib/api'
 
 const ConnectIntervals = () => {
   const navigate = useNavigate()
@@ -33,8 +33,11 @@ const ConnectIntervals = () => {
         })
       }, 500)
 
-      // 触发同步
-      void syncIntervals(true)
+      await updateSettings({
+        intervals_athlete_id: athleteId.trim(),
+        intervals_api_key: apiKey.trim(),
+      })
+      await syncIntervals(true)
 
       clearInterval(progressInterval)
       setSyncProgress(100)

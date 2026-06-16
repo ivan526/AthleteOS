@@ -45,9 +45,9 @@ const Settings = () => {
         // 获取同步状态
         const syncData = await getSyncStatus()
         setSyncStatus({
-          connected: syncData.syncStatus === 'connected',
+          connected: syncData.connected || !['not_connected', 'failed'].includes(syncData.syncStatus),
           lastSync: syncData.lastSyncAt ? new Date(syncData.lastSyncAt).toLocaleString('zh-CN') : '未同步',
-          activitiesCount: 0, // TODO: 从API获取活动数量
+          activitiesCount: syncData.activityCount || 0,
         })
 
         // TODO: 获取用户设置API
@@ -98,9 +98,9 @@ const Settings = () => {
       // 刷新同步状态
       const syncData = await getSyncStatus()
       setSyncStatus({
-        connected: syncData.syncStatus === 'connected',
+        connected: syncData.connected || !['not_connected', 'failed'].includes(syncData.syncStatus),
         lastSync: '刚刚',
-        activitiesCount: syncStatus.activitiesCount + 1,
+        activitiesCount: syncData.activityCount ?? syncStatus.activitiesCount,
       })
     } catch (err: any) {
       console.error('同步失败', err)

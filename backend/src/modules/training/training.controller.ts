@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Body, Request, Logger, Query, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Logger, Query, Param } from '@nestjs/common';
 import { DailyStateBuilderService } from '../athlete/daily-state-builder.service';
 import { TrainingDecisionEngineService } from './training-decision-engine.service';
 import { FeedbackType } from './types';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { CurrentUserService } from '../../shared/prisma/current-user.service';
 
 /**
  * 训练相关API控制器
@@ -16,6 +17,7 @@ export class TrainingController {
     private dailyStateBuilder: DailyStateBuilderService,
     private decisionEngine: TrainingDecisionEngineService,
     private prisma: PrismaService,
+    private currentUser: CurrentUserService,
   ) {}
 
   /**
@@ -23,19 +25,15 @@ export class TrainingController {
    * PRD 20.1节
    */
   @Get('today')
-  async getToday(@Request() req: any) {
+  async getToday() {
     try {
-      // TODO: 替换为真实用户ID，待认证系统完成后
-      const userId = 'b23d32aa-870a-449e-8572-b1fccd8c00e0';
+      const userId = await this.currentUser.getUserId();
       const today = new Date();
 
-      // 构建今日状态
       const state = await this.dailyStateBuilder.buildDailyState(userId, today);
-
-      // 生成训练决策
       const decision = await this.decisionEngine.generateDailyDecision(userId, state, today);
+      const savedRecommendation = await this.findRecommendationForDate(userId, today);
 
-      // 转换为API响应格式
       return {
         date: today.toISOString().split('T')[0],
         training_capacity: {
@@ -51,24 +49,26 @@ export class TrainingController {
           label: state.trainingRisk.userLabel,
         },
         recommendation: {
-          id: 'rec_temp', // TODO: 从数据库获取真实ID
+          id: savedRecommendation?.id ?? '',
           sport: decision.recommendation.sport,
           type: decision.recommendation.type,
           title: decision.recommendation.title,
           duration_minutes: decision.recommendation.durationMinutes,
           expected_tss: decision.recommendation.expectedTss,
           intensity: decision.recommendation.intensity,
-          structure: decision.recommendation.structure,
+          structure: this.toApiStructure(decision.recommendation.structure),
         },
         explanation: {
           simple: decision.decision.userFriendlyReason,
-          reasons: decision.decision.evidence.map(e => e.split('=')[1] + ' ' + e.split('=')[0].replace('_', ' ')), // 临时转换
+          reasons: this.buildFriendlyReasons(state),
           technical: {
+            ctl: state.fitness,
+            atl: state.fatigue,
             form: state.form,
             acwr: state.acwr?.acwr,
             monotony: state.monotony?.monotony,
-            sleep_score: state.sleepScore,
-            hrv_score: state.hrvScore,
+            sleep_score: state.sleepScore ?? null,
+            hrv_score: state.hrvScore ?? null,
             confidence: state.confidence,
             triggered_rules: state.hardSafety?.rules || [],
           },
@@ -105,14 +105,18 @@ export class TrainingController {
       preferred_sport?: string;
       note?: string;
     },
-    @Request() req: any,
   ) {
-    // TODO: 替换为真实用户ID
-    const userId = 'test-user-id';
+    const userId = await this.currentUser.getUserId();
+    const recommendationId =
+      body.recommendation_id || (await this.findRecommendationForDate(userId, new Date()))?.id;
+
+    if (!recommendationId) {
+      throw new Error('训练建议不存在');
+    }
 
     const result = await this.decisionEngine.adjustRecommendation(
       userId,
-      body.recommendation_id,
+      recommendationId,
       body.feedback_type,
       {
         subjectiveFatigue: body.subjective_fatigue,
@@ -127,13 +131,14 @@ export class TrainingController {
       adjusted: result.adjusted,
       new_recommendation: result.newRecommendation
         ? {
-            id: 'rec_adjusted',
+            id: recommendationId,
             sport: result.newRecommendation.sport,
             type: result.newRecommendation.type,
             title: result.newRecommendation.title,
             duration_minutes: result.newRecommendation.durationMinutes,
             expected_tss: result.newRecommendation.expectedTss,
             intensity: result.newRecommendation.intensity,
+            structure: this.toApiStructure(result.newRecommendation.structure),
           }
         : undefined,
       reason: result.reason,
@@ -150,12 +155,22 @@ export class TrainingController {
    */
   @Get('activities')
   async getActivities(
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 30,
-    @Request() req: any,
+    @Query('page') page = '1',
+    @Query('limit') limit = '30',
   ) {
-    // TODO: 实现真实活动数据查询，暂时返回空数组
-    return [];
+    const userId = await this.currentUser.getUserId();
+    const pageNumber = Number(page) || 1;
+    const take = Math.min(Number(limit) || 30, 100);
+    const skip = Math.max(pageNumber - 1, 0) * take;
+
+    const activities = await this.prisma.activity.findMany({
+      where: { connectedAccount: { userId } },
+      orderBy: { startTime: 'desc' },
+      skip,
+      take,
+    });
+
+    return activities.map((activity) => this.toApiActivity(activity));
   }
 
   /**
@@ -163,11 +178,18 @@ export class TrainingController {
    */
   @Get('activities/:id')
   async getActivityDetail(
-    @Request() req: any,
     @Param('id') id: string,
   ) {
-    // TODO: 实现真实活动详情查询
-    throw new Error('活动详情接口待实现');
+    const userId = await this.currentUser.getUserId();
+    const activity = await this.prisma.activity.findFirst({
+      where: { id, connectedAccount: { userId } },
+    });
+
+    if (!activity) {
+      throw new Error('活动不存在');
+    }
+
+    return this.toApiActivity(activity);
   }
 
   /**
@@ -175,51 +197,131 @@ export class TrainingController {
    */
   @Get('weekly-review')
   async getWeeklyReview(
-    @Query('weekOffset') weekOffset: number = 0,
-    @Request() req: any,
+    @Query('weekOffset') weekOffset = '0',
   ) {
+    const userId = await this.currentUser.getUserId();
+    const offset = Number(weekOffset) || 0;
     // 计算周的起止日期（周一到周日）
     const baseDate = new Date();
     const currentDay = baseDate.getDay();
     const monday = new Date(baseDate);
-    monday.setDate(baseDate.getDate() - currentDay + 1 - (weekOffset * 7));
+    const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1;
+    monday.setDate(baseDate.getDate() - daysFromMonday - offset * 7);
+    monday.setHours(0, 0, 0, 0);
 
     const weekStart = new Date(monday);
     const weekEnd = new Date(monday);
     weekEnd.setDate(monday.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
 
     const formatDate = (date: Date) => {
       return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     };
 
-    // 暂时返回模拟数据
+    const activities = await this.prisma.activity.findMany({
+      where: {
+        connectedAccount: { userId },
+        startTime: {
+          gte: weekStart,
+          lte: weekEnd,
+        },
+      },
+      orderBy: { startTime: 'asc' },
+    });
+
+    const previousWeekStart = new Date(weekStart);
+    previousWeekStart.setDate(weekStart.getDate() - 7);
+    const previousWeekEnd = new Date(weekEnd);
+    previousWeekEnd.setDate(weekEnd.getDate() - 7);
+    const previousActivities = await this.prisma.activity.findMany({
+      where: {
+        connectedAccount: { userId },
+        startTime: {
+          gte: previousWeekStart,
+          lte: previousWeekEnd,
+        },
+      },
+    });
+
+    const weeklyTss = Math.round(activities.reduce((sum, activity) => sum + (activity.tss || 0), 0));
+    const previousTss = previousActivities.reduce((sum, activity) => sum + (activity.tss || 0), 0);
+    const loadChangeVsLastWeek = previousTss > 0 ? (weeklyTss - previousTss) / previousTss : 0;
+    const trainingDays = new Set(activities.map((activity) => activity.startTime.toISOString().split('T')[0])).size;
+    const adherence = Math.min(trainingDays / 6, 1);
+    const riskLevel = loadChangeVsLastWeek > 0.2 ? 'moderate' : 'low';
+
     return {
       weekStart: formatDate(weekStart),
       weekEnd: formatDate(weekEnd),
-      summary: '本周训练负荷稳定，完成情况良好。',
-      adherence: 0.85,
-      weeklyTss: 430,
-      loadChangeVsLastWeek: 0.06,
-      trainingRiskLevel: 'low',
+      summary: weeklyTss > 0 ? '本周训练完成度较好，负荷增长稳定。' : '本周暂无训练记录，建议从轻松训练恢复节奏。',
+      adherence,
+      weeklyTss,
+      loadChangeVsLastWeek,
+      trainingRiskLevel: riskLevel,
       highlights: [
-        '完成 6 次训练，完成率 86%',
-        '周总TSS: 430',
-        '周负荷增长 6%，处于合理范围'
+        `完成 ${trainingDays} 次训练`,
+        `周训练负荷 TSS ${weeklyTss}`,
+        Math.abs(loadChangeVsLastWeek) < 0.1 ? '周负荷增长处于合理范围' : `较上周 ${loadChangeVsLastWeek > 0 ? '增加' : '下降'} ${Math.abs(Math.round(loadChangeVsLastWeek * 100))}%`,
       ],
-      warnings: [
-        '训练结构合理，继续保持',
-        '保证充足睡眠和营养补充'
-      ],
-      dailyStats: [
-        { date: '6月10日', tss: 28, type: 'training' },
-        { date: '6月11日', tss: 82, type: 'training' },
-        { date: '6月12日', tss: 40, type: 'training' },
-        { date: '6月13日', tss: 32, type: 'training' },
-        { date: '6月14日', tss: 65, type: 'training' },
-        { date: '6月15日', tss: 0, type: 'rest' },
-        { date: '6月16日', tss: 0, type: 'rest' },
-      ],
+      warnings: loadChangeVsLastWeek > 0.15
+        ? ['周末连续两天强度偏高']
+        : ['保持当前训练节奏，注意睡眠和补给'],
+      nextWeekRecommendation: loadChangeVsLastWeek > 0.15
+        ? '下周建议控制高强度次数。'
+        : '下周可以维持当前训练量。',
+      dailyStats: this.buildWeeklyDailyStats(weekStart, activities),
     };
+  }
+
+  @Get('state/daily')
+  async getDailyState(@Query('date') date?: string) {
+    const userId = await this.currentUser.getUserId();
+    const targetDate = this.dateOnly(date ? new Date(date) : new Date());
+    const state = await this.prisma.dailyAthleteState.findUnique({
+      where: {
+        userId_date: {
+          userId,
+          date: targetDate,
+        },
+      },
+    });
+
+    return state || { date: targetDate.toISOString().split('T')[0], subjectiveFatigue: null };
+  }
+
+  @Post('state/daily')
+  async updateDailyState(
+    @Body()
+    body: {
+      date?: string;
+      subjective_fatigue?: number;
+      sleep_score?: number;
+      hrv_score?: number;
+      note?: string;
+    },
+  ) {
+    const userId = await this.currentUser.getUserId();
+    const targetDate = this.dateOnly(body.date ? new Date(body.date) : new Date());
+    const latestState = await this.dailyStateBuilder.buildDailyState(userId, targetDate);
+
+    return this.prisma.dailyAthleteState.update({
+      where: {
+        userId_date: {
+          userId,
+          date: targetDate,
+        },
+      },
+      data: {
+        subjectiveFatigue: body.subjective_fatigue,
+        sleepScore: body.sleep_score,
+        hrvScore: body.hrv_score,
+        stateJson: {
+          ...latestState,
+          manualNote: body.note,
+          manualUpdatedAt: new Date().toISOString(),
+        } as any,
+      },
+    });
   }
 
   /**
@@ -240,5 +342,88 @@ export class TrainingController {
     if (confidence > 0.6) return '建议可信度中等';
     if (confidence > 0.4) return '建议仅供参考';
     return '数据不足，建议谨慎参考';
+  }
+
+  private async findRecommendationForDate(userId: string, date: Date) {
+    return this.prisma.dailyRecommendation.findUnique({
+      where: {
+        userId_date: {
+          userId,
+          date: this.dateOnly(date),
+        },
+      },
+    });
+  }
+
+  private dateOnly(date: Date) {
+    return new Date(date.toISOString().split('T')[0]);
+  }
+
+  private toApiStructure(structure: any) {
+    return {
+      warmup: structure?.warmup,
+      main_set: structure?.main_set ?? structure?.mainSet ?? '按照计划完成训练',
+      cooldown: structure?.cooldown,
+    };
+  }
+
+  private buildFriendlyReasons(state: any): string[] {
+    const reasons = ['近期训练负荷稳定'];
+    if ((state.sleepScore ?? 75) >= 70) reasons.unshift('睡眠恢复较好');
+    if ((state.trainingRisk?.score ?? 0.3) < 0.5) reasons.push('当前疲劳处于可接受范围');
+    if (state.hardSafety?.triggered) reasons.push('安全规则已限制训练强度');
+    return reasons.slice(0, 3);
+  }
+
+  private toApiActivity(activity: any) {
+    const distanceKm = activity.distanceMeters ? activity.distanceMeters / 1000 : 0;
+    const pace = activity.avgPace ? this.formatPace(activity.avgPace) : undefined;
+
+    return {
+      id: activity.id,
+      date: activity.startTime.toISOString().split('T')[0],
+      type: activity.sport,
+      name: this.getActivityName(activity.sport, activity.tss || 0),
+      duration: `${Math.round(activity.durationSeconds / 60)} 分钟`,
+      durationSeconds: activity.durationSeconds,
+      distance: distanceKm ? `${distanceKm.toFixed(1)} km` : '-',
+      distanceMeters: activity.distanceMeters,
+      tss: Math.round(activity.tss || 0),
+      intensity: this.getIntensityLabel(activity.tss || 0),
+      avgPace: pace,
+      avgHr: activity.avgHr ? Math.round(activity.avgHr) : undefined,
+      maxHr: activity.maxHr ? Math.round(activity.maxHr) : undefined,
+      elevationGain: activity.elevationGain ? `${Math.round(activity.elevationGain)} m` : undefined,
+      notes: activity.rawData?.source === 'demo' ? '演示训练记录' : undefined,
+    };
+  }
+
+  private getActivityName(sport: string, tss: number) {
+    if (sport === 'cycling') return tss > 70 ? '节奏骑' : '有氧骑';
+    if (sport === 'running') return tss > 75 ? '长距离跑' : tss > 55 ? '节奏跑' : '轻松跑';
+    return '训练';
+  }
+
+  private formatPace(secondsPerKm: number) {
+    const minutes = Math.floor(secondsPerKm / 60);
+    const seconds = Math.round(secondsPerKm % 60);
+    return `${minutes}:${String(seconds).padStart(2, '0')}/km`;
+  }
+
+  private buildWeeklyDailyStats(weekStart: Date, activities: any[]) {
+    return Array.from({ length: 7 }).map((_, index) => {
+      const date = new Date(weekStart);
+      date.setDate(weekStart.getDate() + index);
+      const dateKey = date.toISOString().split('T')[0];
+      const tss = activities
+        .filter((activity) => activity.startTime.toISOString().split('T')[0] === dateKey)
+        .reduce((sum, activity) => sum + (activity.tss || 0), 0);
+
+      return {
+        date: `${date.getMonth() + 1}月${date.getDate()}日`,
+        tss: Math.round(tss),
+        type: tss > 0 ? 'training' : 'rest',
+      };
+    });
   }
 }

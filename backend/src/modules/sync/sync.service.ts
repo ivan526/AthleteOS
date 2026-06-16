@@ -76,8 +76,6 @@ export class SyncService {
 
       // 处理每个活动，去重并存储
       for (const activity of activities) {
-        await this.processActivity(connectedAccount.id, activity);
-        // 检查是新增还是更新
         const existing = await this.prisma.activity.findUnique({
           where: {
             connectedAccountId_providerActivityId: {
@@ -86,6 +84,7 @@ export class SyncService {
             },
           },
         });
+        await this.processActivity(connectedAccount.id, activity);
         if (existing) {
           updatedCount++;
         } else {
@@ -223,5 +222,138 @@ export class SyncService {
     } catch (error) {
       return { success: false, error: error.message };
     }
+  }
+
+  async getStatus(userId: string) {
+    const connectedAccount = await this.prisma.connectedAccount.findUnique({
+      where: {
+        userId_provider: {
+          userId,
+          provider: 'intervals.icu',
+        },
+      },
+      include: {
+        _count: {
+          select: { activities: true },
+        },
+        activities: {
+          orderBy: { startTime: 'desc' },
+          take: 1,
+          select: { startTime: true },
+        },
+      },
+    });
+
+    if (!connectedAccount) {
+      return {
+        connected: false,
+        syncStatus: 'not_connected',
+        syncMessage: '未连接 Intervals.icu',
+        lastSyncAt: null,
+        activityCount: 0,
+        dailyStateCount: 0,
+        latestActivityDate: null,
+      };
+    }
+
+    const dailyStateCount = await this.prisma.dailyAthleteState.count({
+      where: { userId },
+    });
+
+    return {
+      connected: connectedAccount.syncStatus !== 'not_connected',
+      syncStatus: connectedAccount.syncStatus,
+      syncMessage: connectedAccount.syncMessage,
+      lastSyncAt: connectedAccount.lastSyncAt,
+      activityCount: connectedAccount._count.activities,
+      dailyStateCount,
+      latestActivityDate: connectedAccount.activities[0]?.startTime ?? null,
+    };
+  }
+
+  async getSettings(userId: string) {
+    const [profile, connectedAccount] = await Promise.all([
+      this.prisma.athleteProfile.findUnique({ where: { userId } }),
+      this.prisma.connectedAccount.findUnique({
+        where: {
+          userId_provider: {
+            userId,
+            provider: 'intervals.icu',
+          },
+        },
+      }),
+    ]);
+
+    return {
+      intervals_athlete_id: connectedAccount?.athleteId ?? '',
+      has_credentials: Boolean(connectedAccount?.apiKey && connectedAccount.apiKey !== 'demo'),
+      last_sync_at: connectedAccount?.lastSyncAt ?? null,
+      primary_sport: profile?.primarySport ?? 'running',
+      weekly_available_days: profile?.weeklyAvailableDays ?? 5,
+      preferred_sports: profile?.preferredSports ?? ['running', 'cycling'],
+      primary_goal: profile?.primaryGoal ?? '半马 1:40',
+      goal_date: profile?.goalDate ?? '2026-11-15',
+      goal_time: profile?.goalTime ?? 6000,
+    };
+  }
+
+  async updateSettings(
+    userId: string,
+    data: {
+      intervals_api_key?: string;
+      intervals_athlete_id?: string;
+      primary_sport?: string;
+      weekly_available_days?: number;
+    },
+  ) {
+    const existingAccount = await this.prisma.connectedAccount.findUnique({
+      where: {
+        userId_provider: {
+          userId,
+          provider: 'intervals.icu',
+        },
+      },
+    });
+
+    await this.prisma.athleteProfile.upsert({
+      where: { userId },
+      update: {
+        primarySport: data.primary_sport,
+        weeklyAvailableDays: data.weekly_available_days,
+      },
+      create: {
+        userId,
+        primarySport: data.primary_sport ?? 'running',
+        weeklyAvailableDays: data.weekly_available_days ?? 5,
+        preferredSports: ['running', 'cycling'],
+      },
+    });
+
+    if (data.intervals_api_key || data.intervals_athlete_id) {
+      await this.prisma.connectedAccount.upsert({
+        where: {
+          userId_provider: {
+            userId,
+            provider: 'intervals.icu',
+          },
+        },
+        update: {
+          athleteId: data.intervals_athlete_id ?? existingAccount?.athleteId ?? '',
+          apiKey: data.intervals_api_key ?? existingAccount?.apiKey ?? '',
+          syncStatus: 'connected',
+          syncMessage: '已保存 Intervals.icu 凭证',
+        },
+        create: {
+          userId,
+          provider: 'intervals.icu',
+          athleteId: data.intervals_athlete_id ?? '',
+          apiKey: data.intervals_api_key ?? '',
+          syncStatus: 'connected',
+          syncMessage: '已保存 Intervals.icu 凭证',
+        },
+      });
+    }
+
+    return this.getSettings(userId);
   }
 }
