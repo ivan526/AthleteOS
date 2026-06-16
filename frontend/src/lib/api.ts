@@ -186,6 +186,8 @@ export async function getTodayData(): Promise<TodayResponse> {
         ],
         technical: {
           form: -9,
+          ctl: 52.3,
+          atl: 61.2,
           acwr: 1.12,
           monotony: 1.7,
           sleep_score: null,

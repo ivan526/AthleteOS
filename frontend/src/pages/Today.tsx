@@ -280,11 +280,11 @@ const Today = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 bg-background-weak rounded-lg">
                   <p className="text-xs text-text-secondary mb-1">CTL</p>
-                  <p className="text-lg font-semibold">{data.explanation.technical.form ? (data.explanation.technical.form + (data.explanation.technical.ctl || 0)).toFixed(1) : '-'}</p>
+                  <p className="text-lg font-semibold">{data.explanation.technical.ctl?.toFixed(1) || '-'}</p>
                 </div>
                 <div className="p-3 bg-background-weak rounded-lg">
                   <p className="text-xs text-text-secondary mb-1">ATL</p>
-                  <p className="text-lg font-semibold">{data.explanation.technical.ctl ? (data.explanation.technical.ctl - data.explanation.technical.form).toFixed(1) : '-'}</p>
+                  <p className="text-lg font-semibold">{data.explanation.technical.atl?.toFixed(1) || '-'}</p>
                 </div>
                 <div className="p-3 bg-background-weak rounded-lg">
                   <p className="text-xs text-text-secondary mb-1">Form</p>
