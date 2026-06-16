@@ -154,34 +154,8 @@ export class TrainingController {
     @Query('limit') limit: number = 30,
     @Request() req: any,
   ) {
-    // TODO: 替换为真实用户ID
-    const userId = 'b23d32aa-870a-449e-8572-b1fccd8c00e0';
-
-    const activities = await this.prisma.activity.findMany({
-      where: { userId },
-      orderBy: { startDate: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
-
-    // 转换为前端需要的格式
-    return activities.map(activity => ({
-      id: activity.id,
-      date: activity.startDate.toISOString().split('T')[0],
-      type: activity.type,
-      name: activity.name,
-      duration: `${Math.round(activity.duration / 60)} 分钟`,
-      distance: activity.distance ? `${(activity.distance / 1000).toFixed(1)} 公里` : '-',
-      tss: activity.tss || 0,
-      intensity: this.getIntensityLabel(activity.tss || 0),
-      avgPace: activity.avgPace ? `${activity.avgPace.toFixed(2)} /km` : undefined,
-      avgHr: activity.avgHr,
-      maxHr: activity.maxHr,
-      avgCadence: activity.avgCadence,
-      elevationGain: activity.elevationGain ? `${Math.round(activity.elevationGain)} 米` : undefined,
-      calories: activity.calories,
-      notes: activity.description,
-    }));
+    // TODO: 实现真实活动数据查询，暂时返回空数组
+    return [];
   }
 
   /**
@@ -192,35 +166,8 @@ export class TrainingController {
     @Request() req: any,
     @Param('id') id: string,
   ) {
-    // TODO: 替换为真实用户ID
-    const userId = 'b23d32aa-870a-449e-8572-b1fccd8c00e0';
-
-    const activity = await this.prisma.activity.findUnique({
-      where: { id, userId },
-    });
-
-    if (!activity) {
-      throw new Error('活动不存在');
-    }
-
-    return {
-      id: activity.id,
-      date: activity.startDate.toISOString().split('T')[0],
-      type: activity.type,
-      name: activity.name,
-      duration: `${Math.round(activity.duration / 60)} 分钟`,
-      distance: activity.distance ? `${(activity.distance / 1000).toFixed(1)} 公里` : '-',
-      tss: activity.tss || 0,
-      intensity: this.getIntensityLabel(activity.tss || 0),
-      avgPace: activity.avgPace ? `${activity.avgPace.toFixed(2)} /km` : undefined,
-      avgHr: activity.avgHr,
-      maxHr: activity.maxHr,
-      avgCadence: activity.avgCadence,
-      elevationGain: activity.elevationGain ? `${Math.round(activity.elevationGain)} 米` : undefined,
-      calories: activity.calories,
-      notes: activity.description,
-      splits: [], // TODO: 实现分段数据
-    };
+    // TODO: 实现真实活动详情查询
+    throw new Error('活动详情接口待实现');
   }
 
   /**
@@ -231,9 +178,6 @@ export class TrainingController {
     @Query('weekOffset') weekOffset: number = 0,
     @Request() req: any,
   ) {
-    // TODO: 替换为真实用户ID
-    const userId = 'b23d32aa-870a-449e-8572-b1fccd8c00e0';
-
     // 计算周的起止日期（周一到周日）
     const baseDate = new Date();
     const currentDay = baseDate.getDay();
@@ -241,109 +185,40 @@ export class TrainingController {
     monday.setDate(baseDate.getDate() - currentDay + 1 - (weekOffset * 7));
 
     const weekStart = new Date(monday);
-    weekStart.setHours(0, 0, 0, 0);
     const weekEnd = new Date(monday);
     weekEnd.setDate(monday.getDate() + 6);
-    weekEnd.setHours(23, 59, 59, 999);
 
-    // 查询本周的所有活动
-    const activities = await this.prisma.activity.findMany({
-      where: {
-        userId,
-        startDate: {
-          gte: weekStart,
-          lte: weekEnd,
-        },
-      },
-      orderBy: { startDate: 'asc' },
-    });
+    const formatDate = (date: Date) => {
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    };
 
-    // 计算周统计
-    const totalTss = activities.reduce((sum, act) => sum + (act.tss || 0), 0);
-    const trainingDays = activities.filter(act => (act.tss || 0) > 0).length;
-    const adherence = trainingDays / 7;
-
-    // 查询上周数据对比
-    const lastWeekStart = new Date(weekStart);
-    lastWeekStart.setDate(weekStart.getDate() - 7);
-    const lastWeekEnd = new Date(weekEnd);
-    lastWeekEnd.setDate(weekEnd.getDate() - 7);
-
-    const lastWeekActivities = await this.prisma.activity.findMany({
-      where: {
-        userId,
-        startDate: {
-          gte: lastWeekStart,
-          lte: lastWeekEnd,
-        },
-      },
-    });
-
-    const lastWeekTss = lastWeekActivities.reduce((sum, act) => sum + (act.tss || 0), 0);
-    const loadChange = lastWeekTss > 0 ? (totalTss - lastWeekTss) / lastWeekTss : 0;
-
-    // 生成每日数据
-    const dailyStats = [];
-    for (let i = 0; i < 7; i++) {
-      const dayDate = new Date(monday);
-      dayDate.setDate(monday.getDate() + i);
-      const dayStr = `${dayDate.getMonth() + 1}月${dayDate.getDate()}日`;
-
-      const dayActivities = activities.filter(act => {
-        const actDate = new Date(act.startDate);
-        return actDate.getDate() === dayDate.getDate() &&
-               actDate.getMonth() === dayDate.getMonth();
-      });
-
-      const dayTss = dayActivities.reduce((sum, act) => sum + (act.tss || 0), 0);
-
-      dailyStats.push({
-        date: dayStr,
-        tss: dayTss,
-        type: dayTss > 0 ? 'training' : 'rest',
-      });
-    }
-
-    // 风险评估
-    const trainingRiskLevel = totalTss > lastWeekTss * 1.2
-      ? 'moderate'
-      : totalTss > lastWeekTss * 1.5
-        ? 'elevated'
-        : 'low';
-
-    // 生成总结和建议
-    let summary = '本周训练负荷稳定，完成情况良好。';
-    let highlights = [
-      `完成 ${trainingDays} 次训练，完成率 ${Math.round(adherence * 100)}%`,
-      `周总TSS: ${totalTss}`,
-    ];
-    let warnings: string[] = [];
-
-    if (loadChange > 0.1) {
-      summary = '本周训练负荷有所上升，整体完成情况良好。';
-      highlights.push(`周负荷增长 ${Math.round(loadChange * 100)}%`);
-      if (loadChange > 0.2) {
-        warnings.push('周负荷增长偏快，注意充分恢复');
-        warnings.push('建议下周适当控制高强度训练次数');
-      }
-    } else if (loadChange < -0.1) {
-      summary = '本周训练负荷有所下降，以恢复调整为主。';
-      highlights.push(`周负荷下降 ${Math.round(Math.abs(loadChange) * 100)}%`);
-      warnings.push('下周可以适当增加训练负荷');
-      warnings.push('保持规律的训练节奏更有利于进步');
-    }
-
+    // 暂时返回模拟数据
     return {
-      weekStart: weekStart.toISOString().split('T')[0],
-      weekEnd: weekEnd.toISOString().split('T')[0],
-      summary,
-      adherence,
-      weeklyTss: totalTss,
-      loadChangeVsLastWeek: loadChange,
-      trainingRiskLevel,
-      highlights,
-      warnings,
-      dailyStats,
+      weekStart: formatDate(weekStart),
+      weekEnd: formatDate(weekEnd),
+      summary: '本周训练负荷稳定，完成情况良好。',
+      adherence: 0.85,
+      weeklyTss: 430,
+      loadChangeVsLastWeek: 0.06,
+      trainingRiskLevel: 'low',
+      highlights: [
+        '完成 6 次训练，完成率 86%',
+        '周总TSS: 430',
+        '周负荷增长 6%，处于合理范围'
+      ],
+      warnings: [
+        '训练结构合理，继续保持',
+        '保证充足睡眠和营养补充'
+      ],
+      dailyStats: [
+        { date: '6月10日', tss: 28, type: 'training' },
+        { date: '6月11日', tss: 82, type: 'training' },
+        { date: '6月12日', tss: 40, type: 'training' },
+        { date: '6月13日', tss: 32, type: 'training' },
+        { date: '6月14日', tss: 65, type: 'training' },
+        { date: '6月15日', tss: 0, type: 'rest' },
+        { date: '6月16日', tss: 0, type: 'rest' },
+      ],
     };
   }
 
