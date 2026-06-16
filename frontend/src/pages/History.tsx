@@ -367,51 +367,64 @@ const History = () => {
         {selectedPeriod === 'week' && (
           <div>
             <h3 className="text-lg font-semibold text-text-primary mb-3">训练记录</h3>
-            <div className="space-y-3 mb-20">
-              {activities.slice(0, 7).map((activity) => (
-                <Link
-                  key={activity.id}
-                  to={activity.type !== '休息' ? `/activity/${activity.id}` : '#'}
-                  className={`block card p-4 ${activity.type === '休息' ? 'cursor-default' : 'hover:border-primary/50 transition-colors'}`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3">
-                      <div className="text-2xl mt-1">{getActivityIcon(activity.type)}</div>
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium text-text-primary">{activity.name}</span>
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full ${getIntensityColor(
-                              activity.intensity
-                            )}`}
-                          >
-                            {activity.intensity}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-text-secondary mb-1">
-                          <Calendar size={14} />
-                          <span>{activity.date}</span>
-                          <span>•</span>
-                          <span>{activity.duration}</span>
-                          {activity.distance !== '-' && (
-                            <>
-                              <span>•</span>
-                              <span>{activity.distance}</span>
-                            </>
+            {activities.length === 0 ? (
+              <div className="card p-8 text-center">
+                <div className="text-4xl mb-4">📊</div>
+                <h3 className="text-lg font-semibold text-text-primary mb-2">还没有训练记录</h3>
+                <p className="text-text-secondary mb-4 max-w-xs mx-auto">
+                  请先在设置页面连接并同步Intervals.icu数据，同步完成后即可查看历史训练记录。
+                </p>
+                <Link to="/settings" className="btn-primary inline-flex">
+                  去同步数据
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-3 mb-20">
+                {activities.slice(0, 7).map((activity) => (
+                  <Link
+                    key={activity.id}
+                    to={activity.type !== '休息' ? `/activity/${activity.id}` : '#'}
+                    className={`block card p-4 ${activity.type === '休息' ? 'cursor-default' : 'hover:border-primary/50 transition-colors'}`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-3">
+                        <div className="text-2xl mt-1">{getActivityIcon(activity.type)}</div>
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-text-primary">{activity.name}</span>
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full ${getIntensityColor(
+                                activity.intensity
+                              )}`}
+                            >
+                              {activity.intensity}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-text-secondary mb-1">
+                            <Calendar size={14} />
+                            <span>{activity.date}</span>
+                            <span>•</span>
+                            <span>{activity.duration}</span>
+                            {activity.distance !== '-' && (
+                              <>
+                                <span>•</span>
+                                <span>{activity.distance}</span>
+                              </>
+                            )}
+                          </div>
+                          {activity.tss > 0 && (
+                            <div className="text-sm text-primary">TSS {activity.tss}</div>
                           )}
                         </div>
-                        {activity.tss > 0 && (
-                          <div className="text-sm text-primary">TSS {activity.tss}</div>
-                        )}
                       </div>
+                      {activity.type !== '休息' && (
+                        <ChevronRight size={20} className="text-text-secondary mt-2" />
+                      )}
                     </div>
-                    {activity.type !== '休息' && (
-                      <ChevronRight size={20} className="text-text-secondary mt-2" />
-                    )}
-                  </div>
-                </Link>
-              ))}
-            </div>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
