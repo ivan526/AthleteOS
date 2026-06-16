@@ -166,7 +166,7 @@ const Settings = () => {
                 <span>{syncing ? '同步中...' : '同步'}</span>
               </button>
             ) : (
-              <Link to="/connect-intervals" className="btn-primary text-sm px-3 py-1.5">
+              <Link to="/connect/intervals" className="btn-primary text-sm px-3 py-1.5">
                 连接
               </Link>
             )}
