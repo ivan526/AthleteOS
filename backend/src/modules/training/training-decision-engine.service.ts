@@ -382,22 +382,9 @@ export class TrainingDecisionEngineService {
     adjustedWorkout: WorkoutRecommendation,
     feedbackType: FeedbackType,
   ) {
-    // 将原建议标记为已调整
-    await this.prisma.dailyRecommendation.update({
+    return this.prisma.dailyRecommendation.update({
       where: { id: original.id },
-      data: { status: 'adjusted' },
-    });
-
-    // 创建新的建议
-    return this.prisma.dailyRecommendation.create({
       data: {
-        userId,
-        date: original.date,
-        trainingCapacity: original.trainingCapacity,
-        capacityStatus: original.capacityStatus,
-        trainingRiskScore: original.trainingRiskScore,
-        trainingRiskLevel: original.trainingRiskLevel,
-        dataLevel: original.dataLevel,
         availableTimeMinutes: adjustedWorkout.durationMinutes,
         preferredSport: adjustedWorkout.sport,
         sport: adjustedWorkout.sport,
@@ -410,12 +397,12 @@ export class TrainingDecisionEngineService {
         dayType: original.dayType,
         hardSafetyTriggered: feedbackType === 'pain_or_discomfort',
         triggeredRules: [],
-        evidence: original.evidence,
+        evidence: original.evidence as any,
         userFriendlyReason: `根据你的反馈调整：${feedbackType}`,
         technicalReason: `Adjusted due to ${feedbackType}`,
         confidence: original.confidence * 0.9,
-        status: 'active',
-        originalRecommendationId: original.id,
+        status: 'adjusted',
+        originalRecommendationId: original.originalRecommendationId ?? original.id,
         decisionJson: {
           ...original.decisionJson,
           adjustedFrom: original.id,

@@ -350,7 +350,7 @@ export class WorkoutGeneratorService {
         adjusted.intensity = 'easy';
         adjusted.durationMinutes = Math.round(original.durationMinutes * 0.7);
         adjusted.expectedTss = Math.round(original.expectedTss * 0.6);
-        adjusted.title = '轻松' + adjusted.title.replace('跑', '跑').replace('骑', '骑');
+        adjusted.title = adjusted.title.startsWith('轻松') ? adjusted.title : `轻松${adjusted.title}`;
         adjusted.type = original.sport === 'running' ? 'easy_run' : 'easy_ride';
         break;
 
@@ -390,7 +390,7 @@ export class WorkoutGeneratorService {
         // 改为轻松训练
         adjusted.intensity = 'easy';
         adjusted.type = original.sport === 'running' ? 'easy_run' : 'easy_ride';
-        adjusted.title = '轻松' + adjusted.title.replace('跑', '跑').replace('骑', '骑');
+        adjusted.title = adjusted.title.startsWith('轻松') ? adjusted.title : `轻松${adjusted.title}`;
         adjusted.expectedTss = Math.round(original.expectedTss * 0.7);
         break;
     }

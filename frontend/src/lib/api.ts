@@ -174,6 +174,34 @@ export function getSyncStatus(): Promise<any> {
   return request('/sync/status')
 }
 
+export interface UserSettings {
+  intervals_athlete_id: string
+  has_credentials: boolean
+  last_sync_at: string | null
+  primary_sport: string
+  weekly_available_days: number
+  preferred_sports: string[]
+  primary_goal: string
+  goal_date: string
+  goal_time: number
+}
+
+export function getSettings(): Promise<UserSettings> {
+  return request<UserSettings>('/settings')
+}
+
+export function updateSettings(data: {
+  intervals_api_key?: string
+  intervals_athlete_id?: string
+  primary_sport?: string
+  weekly_available_days?: number
+}): Promise<UserSettings> {
+  return request<UserSettings>('/settings', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}
+
 /**
  * 获取历史活动列表
  */
