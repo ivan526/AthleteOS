@@ -3,7 +3,7 @@ import { ArrowLeft, Clock, Activity, AlertTriangle, Play, Settings, Pause, Rotat
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import FeedbackModal from '../components/FeedbackModal'
 import Modal from '../components/Modal'
-import { type WorkoutRecommendation } from '../lib/api'
+import { getTodayData, type WorkoutRecommendation } from '../lib/api'
 
 // 训练详情响应接口
 interface RecommendationResponse extends WorkoutRecommendation {
@@ -35,25 +35,15 @@ const WorkoutDetail = () => {
     try {
       setLoading(true)
       setError(null)
-      // 使用模拟数据
-      const mockData: RecommendationResponse = {
-        id: id || '1',
-        title: '节奏跑',
-        sport: 'running',
-        type: 'tempo_run',
-        duration_minutes: 50,
-        expected_tss: 65,
-        intensity: 'moderate',
-        purpose: '提升半马目标配速维持能力',
-        structure: {
-          warmup: '轻松跑 10 分钟',
-          main_set: '中等偏高强度跑 30 分钟（目标配速+5秒）',
-          cooldown: '轻松跑 10 分钟'
-        },
+      // 从今日训练接口获取推荐数据
+      const todayData = await getTodayData()
+      const recommendation: RecommendationResponse = {
+        ...todayData.recommendation,
+        purpose: '提升目标配速维持能力',
         tips: '呼吸有压力，但不应进入冲刺状态。',
-        notes: '如果腿部不适，改为轻松跑或休息。'
+        notes: '如果身体不适，改为轻松跑或休息。'
       }
-      setData(mockData)
+      setData(recommendation)
     } catch (err: any) {
       setError(err.message || '加载失败，请稍后重试')
     } finally {
