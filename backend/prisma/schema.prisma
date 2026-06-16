@@ -33,7 +33,7 @@ model AthleteProfile {
   userId              String                @unique
   primarySport        String                @default("running") // running, cycling, swimming, etc.
   weeklyAvailableDays Int                   @default(5)
-  preferredSports     String[]              @default(["running"])
+  preferredSports     Json                  @default("[]")
   primaryGoal         String? // e.g., "半马 1:40"
   goalDate            DateTime?
   goalTime            Int? // in seconds
