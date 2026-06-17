@@ -26,6 +26,22 @@ model User {
   dailyRecommendations DailyRecommendation[]
   userFeedbacks       UserFeedback[]
   weeklyReviews       WeeklyReview[]
+  llmSetting          LlmSetting?
+}
+
+// AI Coach LLM 配置
+model LlmSetting {
+  id                  String                @id @default(uuid())
+  userId              String                @unique
+  provider            String                @default("openai-compatible")
+  model               String?
+  baseUrl             String?
+  apiKey              String?
+  enabled             Boolean               @default(false)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // 运动员档案

@@ -190,6 +190,11 @@ export interface UserSettings {
   garmin_last_sync_at: string | null
   garmin_sync_status: string
   garmin_sync_message: string
+  llm_provider: string
+  llm_model: string
+  llm_base_url: string
+  llm_enabled: boolean
+  has_llm_api_key: boolean
   primary_sport: string
   weekly_available_days: number
   preferred_sports: string[]
@@ -207,6 +212,11 @@ export function updateSettings(data: {
   intervals_athlete_id?: string
   garmin_email?: string
   garmin_password?: string
+  llm_provider?: string
+  llm_model?: string
+  llm_base_url?: string
+  llm_api_key?: string
+  llm_enabled?: boolean
   primary_sport?: string
   weekly_available_days?: number
 }): Promise<UserSettings> {

@@ -644,7 +644,7 @@ export class SyncService {
   }
 
   async getSettings(userId: string) {
-    const [profile, connectedAccount, garminAccount] = await Promise.all([
+    const [profile, connectedAccount, garminAccount, llmSetting] = await Promise.all([
       this.prisma.athleteProfile.findUnique({ where: { userId } }),
       this.prisma.connectedAccount.findUnique({
         where: {
@@ -662,6 +662,7 @@ export class SyncService {
           },
         },
       }),
+      this.prisma.llmSetting.findUnique({ where: { userId } }),
     ]);
 
     return {
@@ -673,6 +674,11 @@ export class SyncService {
       garmin_last_sync_at: garminAccount?.lastSyncAt ?? null,
       garmin_sync_status: garminAccount?.syncStatus ?? 'not_connected',
       garmin_sync_message: garminAccount?.syncMessage ?? '未配置 Garmin Connect',
+      llm_provider: llmSetting?.provider ?? 'openai-compatible',
+      llm_model: llmSetting?.model ?? '',
+      llm_base_url: llmSetting?.baseUrl ?? '',
+      llm_enabled: llmSetting?.enabled ?? false,
+      has_llm_api_key: Boolean(llmSetting?.apiKey),
       primary_sport: profile?.primarySport ?? 'running',
       weekly_available_days: profile?.weeklyAvailableDays ?? 5,
       preferred_sports: profile?.preferredSports ?? ['running', 'cycling'],
@@ -689,6 +695,11 @@ export class SyncService {
       intervals_athlete_id?: string;
       garmin_email?: string;
       garmin_password?: string;
+      llm_provider?: string;
+      llm_model?: string;
+      llm_base_url?: string;
+      llm_api_key?: string;
+      llm_enabled?: boolean;
       primary_sport?: string;
       weekly_available_days?: number;
     },
@@ -772,6 +783,34 @@ export class SyncService {
           apiKey: data.garmin_password ?? '',
           syncStatus: 'connected',
           syncMessage: '已保存 Garmin Connect 凭证',
+        },
+      });
+    }
+
+    if (
+      data.llm_provider !== undefined ||
+      data.llm_model !== undefined ||
+      data.llm_base_url !== undefined ||
+      data.llm_api_key !== undefined ||
+      data.llm_enabled !== undefined
+    ) {
+      const existingLlmSetting = await this.prisma.llmSetting.findUnique({ where: { userId } });
+      await this.prisma.llmSetting.upsert({
+        where: { userId },
+        update: {
+          provider: data.llm_provider ?? existingLlmSetting?.provider ?? 'openai-compatible',
+          model: data.llm_model ?? existingLlmSetting?.model ?? null,
+          baseUrl: data.llm_base_url ?? existingLlmSetting?.baseUrl ?? null,
+          apiKey: data.llm_api_key ?? existingLlmSetting?.apiKey ?? null,
+          enabled: data.llm_enabled ?? existingLlmSetting?.enabled ?? false,
+        },
+        create: {
+          userId,
+          provider: data.llm_provider ?? 'openai-compatible',
+          model: data.llm_model ?? null,
+          baseUrl: data.llm_base_url ?? null,
+          apiKey: data.llm_api_key ?? null,
+          enabled: data.llm_enabled ?? false,
         },
       });
     }
