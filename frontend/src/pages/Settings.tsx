@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Watch,
   KeyRound,
+  Bot,
 } from 'lucide-react'
 import Layout from '../components/Layout'
 import {
@@ -51,6 +52,11 @@ const defaultSettings: UserSettings = {
   garmin_last_sync_at: null,
   garmin_sync_status: 'not_connected',
   garmin_sync_message: '未配置 Garmin Connect',
+  llm_provider: 'openai-compatible',
+  llm_model: '',
+  llm_base_url: '',
+  llm_enabled: false,
+  has_llm_api_key: false,
   primary_sport: 'running',
   weekly_available_days: 5,
   preferred_sports: ['running', 'cycling'],
@@ -66,9 +72,15 @@ const Settings = () => {
   const [syncing, setSyncing] = useState(false)
   const [savingGarmin, setSavingGarmin] = useState(false)
   const [syncingGarmin, setSyncingGarmin] = useState(false)
+  const [savingLlm, setSavingLlm] = useState(false)
   const [garminEmail, setGarminEmail] = useState('')
   const [garminPassword, setGarminPassword] = useState('')
   const [garminMfaCode, setGarminMfaCode] = useState('')
+  const [llmProvider, setLlmProvider] = useState('openai-compatible')
+  const [llmModel, setLlmModel] = useState('')
+  const [llmBaseUrl, setLlmBaseUrl] = useState('')
+  const [llmApiKey, setLlmApiKey] = useState('')
+  const [llmEnabled, setLlmEnabled] = useState(false)
 
   const refreshData = async () => {
     const [syncData, settingsData] = await Promise.all([
@@ -83,6 +95,10 @@ const Settings = () => {
     })
     setSettings(settingsData)
     setGarminEmail(settingsData.garmin_email || '')
+    setLlmProvider(settingsData.llm_provider || 'openai-compatible')
+    setLlmModel(settingsData.llm_model || '')
+    setLlmBaseUrl(settingsData.llm_base_url || '')
+    setLlmEnabled(Boolean(settingsData.llm_enabled))
   }
 
   useEffect(() => {
@@ -159,6 +175,26 @@ const Settings = () => {
       await refreshData().catch(() => undefined)
     } finally {
       setSyncingGarmin(false)
+    }
+  }
+
+  const handleSaveLlm = async () => {
+    try {
+      setSavingLlm(true)
+      const updated = await updateSettings({
+        llm_provider: llmProvider,
+        llm_model: llmModel.trim(),
+        llm_base_url: llmBaseUrl.trim(),
+        llm_api_key: llmApiKey || undefined,
+        llm_enabled: llmEnabled,
+      })
+      setSettings(updated)
+      setLlmApiKey('')
+    } catch (err: any) {
+      console.error('保存 LLM 配置失败', err)
+      alert(`保存失败：${err.message || '请检查 LLM 配置'}`)
+    } finally {
+      setSavingLlm(false)
     }
   }
 
@@ -292,6 +328,93 @@ const Settings = () => {
               <span>{syncingGarmin ? '同步中...' : '同步 HRV'}</span>
             </button>
           </div>
+        </div>
+
+        <div className="card mb-4">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Bot size={20} className="text-primary" />
+              </div>
+              <div>
+                <h3 className="font-medium text-text-primary">AI Coach / LLM 配置</h3>
+                <p className="text-sm text-text-secondary">
+                  {settings.llm_enabled
+                    ? `已启用 · ${settings.llm_provider}${settings.llm_model ? ` · ${settings.llm_model}` : ''}`
+                    : '未启用，仅使用规则引擎解释'}
+                </p>
+                <p className="text-xs text-text-secondary mt-0.5">
+                  API Key：{settings.has_llm_api_key ? '已保存' : '未保存'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setLlmEnabled((value) => !value)}
+              className={`relative h-7 w-12 rounded-full transition-colors ${llmEnabled ? 'bg-primary' : 'bg-border'}`}
+              aria-pressed={llmEnabled}
+              aria-label="启用 AI Coach LLM"
+            >
+              <span
+                className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-transform ${llmEnabled ? 'translate-x-5' : 'translate-x-1'}`}
+              />
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            <label className="block">
+              <span className="text-sm text-text-secondary">Provider</span>
+              <select
+                value={llmProvider}
+                onChange={(event) => setLlmProvider(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-text-primary outline-none focus:border-primary"
+              >
+                <option value="openai-compatible">OpenAI-compatible</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="local">Local / Self-hosted</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm text-text-secondary">Base URL</span>
+              <input
+                value={llmBaseUrl}
+                onChange={(event) => setLlmBaseUrl(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-text-primary outline-none focus:border-primary"
+                placeholder="https://api.example.com/v1"
+                autoComplete="off"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm text-text-secondary">Model</span>
+              <input
+                value={llmModel}
+                onChange={(event) => setLlmModel(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-text-primary outline-none focus:border-primary"
+                placeholder="输入模型名称"
+                autoComplete="off"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm text-text-secondary">API Key</span>
+              <input
+                value={llmApiKey}
+                onChange={(event) => setLlmApiKey(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-text-primary outline-none focus:border-primary"
+                placeholder={settings.has_llm_api_key ? '留空则保持原 Key' : '输入 API Key'}
+                type="password"
+                autoComplete="off"
+              />
+            </label>
+          </div>
+
+          <button
+            onClick={handleSaveLlm}
+            disabled={savingLlm || (llmEnabled && !llmModel.trim())}
+            className="mt-4 w-full btn-primary disabled:opacity-50"
+          >
+            {savingLlm ? '保存中...' : '保存 LLM 配置'}
+          </button>
         </div>
 
         <div className="space-y-2 mb-6">
