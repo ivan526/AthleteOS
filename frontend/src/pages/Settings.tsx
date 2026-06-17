@@ -346,6 +346,9 @@ const Settings = () => {
                 <p className="text-xs text-text-secondary mt-0.5">
                   API Key：{settings.has_llm_api_key ? '已保存' : '未保存'}
                 </p>
+                <p className="text-xs text-text-secondary mt-1">
+                  LLM 仅用于解释、总结和问答，不会修改训练负荷或覆盖安全规则。
+                </p>
               </div>
             </div>
             <button
@@ -370,7 +373,6 @@ const Settings = () => {
               >
                 <option value="openai-compatible">OpenAI-compatible</option>
                 <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
                 <option value="deepseek">DeepSeek</option>
                 <option value="local">Local / Self-hosted</option>
               </select>
@@ -410,7 +412,7 @@ const Settings = () => {
 
           <button
             onClick={handleSaveLlm}
-            disabled={savingLlm || (llmEnabled && !llmModel.trim())}
+            disabled={savingLlm || (llmEnabled && (!llmModel.trim() || !llmBaseUrl.trim()))}
             className="mt-4 w-full btn-primary disabled:opacity-50"
           >
             {savingLlm ? '保存中...' : '保存 LLM 配置'}

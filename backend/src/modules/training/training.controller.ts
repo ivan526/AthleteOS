@@ -4,6 +4,7 @@ import { TrainingDecisionEngineService } from './training-decision-engine.servic
 import { FeedbackType } from './types';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { CurrentUserService } from '../../shared/prisma/current-user.service';
+import { LlmCoachService } from './llm-coach.service';
 
 /**
  * 训练相关API控制器
@@ -18,6 +19,7 @@ export class TrainingController {
     private decisionEngine: TrainingDecisionEngineService,
     private prisma: PrismaService,
     private currentUser: CurrentUserService,
+    private llmCoach: LlmCoachService,
   ) {}
 
   /**
@@ -61,6 +63,11 @@ export class TrainingController {
         explanation: {
           simple: decision.decision.userFriendlyReason,
           reasons: this.buildFriendlyReasons(state),
+          ai_coach: {
+            used_llm: Boolean(decision.decisionJson.aiCoach?.usedLlm),
+            safety_filtered: Boolean(decision.decisionJson.aiCoach?.safetyFiltered),
+            fallback_used: Boolean(decision.decisionJson.aiCoach?.fallbackUsed),
+          },
           technical: {
             ctl: state.fitness,
             atl: state.fatigue,
@@ -248,7 +255,7 @@ export class TrainingController {
     const adherence = Math.min(trainingDays / 6, 1);
     const riskLevel = loadChangeVsLastWeek > 0.2 ? 'moderate' : 'low';
 
-    return {
+    const report = {
       weekStart: formatDate(weekStart),
       weekEnd: formatDate(weekEnd),
       summary: weeklyTss > 0 ? '本周训练完成度较好，负荷增长稳定。' : '本周暂无训练记录，建议从轻松训练恢复节奏。',
@@ -269,11 +276,109 @@ export class TrainingController {
         : '下周可以维持当前训练量。',
       dailyStats: this.buildWeeklyDailyStats(weekStart, activities),
     };
+    const analysisContext = await this.buildTrainingAnalysisContext(userId, weekStart, weekEnd);
+    const aiCoachSummary = await this.llmCoach.summarizeTrainingAnalysis({
+      userId,
+      fallbackText: `${report.summary}${report.nextWeekRecommendation}`,
+      evidence: {
+        weeklyReport: report,
+        modelCoverage: analysisContext.modelCoverage,
+        recoveryTrend: analysisContext.recoveryTrend,
+      },
+      ruleResult: {
+        trainingRiskLevel: riskLevel,
+        nextWeekRecommendation: report.nextWeekRecommendation,
+      },
+    });
+
+    return {
+      ...report,
+      aiCoachSummary: aiCoachSummary.text,
+      aiCoach: {
+        usedLlm: aiCoachSummary.usedLlm,
+        safetyFiltered: aiCoachSummary.safetyFiltered,
+        fallbackUsed: aiCoachSummary.fallbackUsed,
+      },
+      modelCoverage: analysisContext.modelCoverage,
+      recoveryTrend: analysisContext.recoveryTrend,
+    };
   }
 
   @Get('weekly-review/latest')
   async getLatestWeeklyReview() {
     return this.getWeeklyReview('0');
+  }
+
+  @Post('ai-coach/ask')
+  async askAiCoach(
+    @Body()
+    body: {
+      question: string;
+      pain?: boolean;
+    },
+  ) {
+    const userId = await this.currentUser.getUserId();
+    const question = body.question?.trim();
+    if (!question) {
+      throw new Error('请输入问题');
+    }
+
+    const state = await this.dailyStateBuilder.buildDailyState(userId, new Date());
+    const fallbackText = `当前 Training Capacity 为 ${state.trainingCapacity.score}，训练风险为 ${state.trainingRisk.userLabel}。AI Coach 只能解释现有数据和规则结果，不会改变训练负荷。`;
+    const result = await this.llmCoach.answerQuestion({
+      userId,
+      question,
+      fallbackText,
+      evidence: {
+        trainingCapacity: state.trainingCapacity,
+        trainingRisk: state.trainingRisk,
+        sleepScore: state.sleepScore,
+        hrvScore: state.hrvScore,
+        form: state.form,
+        acwr: state.acwr,
+        monotony: state.monotony,
+        dataLevel: state.dataLevel,
+        dataQuality: state.dataQuality,
+      },
+      ruleResult: {
+        hardSafety: state.hardSafety,
+      },
+      hardSafetyTriggered: state.hardSafety?.triggered || false,
+      painReported: Boolean(body.pain),
+    });
+
+    return {
+      answer: result.text,
+      used_llm: result.usedLlm,
+      safety_filtered: result.safetyFiltered,
+      fallback_used: result.fallbackUsed,
+    };
+  }
+
+  @Get('ai-coach/audits')
+  async getAiCoachAudits(@Query('limit') limit = '20') {
+    const userId = await this.currentUser.getUserId();
+    const take = Math.max(1, Math.min(Number(limit) || 20, 100));
+    return this.prisma.aiCoachAudit.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take,
+      select: {
+        id: true,
+        interactionType: true,
+        provider: true,
+        model: true,
+        inputEvidence: true,
+        ruleResult: true,
+        rawOutput: true,
+        finalOutput: true,
+        guardrailReasons: true,
+        safetyFiltered: true,
+        fallbackUsed: true,
+        errorMessage: true,
+        createdAt: true,
+      },
+    });
   }
 
   @Get('history/summary')
@@ -688,5 +793,73 @@ export class TrainingController {
         .filter(predicate)
         .map((metric) => this.formatDate(metric.date)),
     ).size;
+  }
+
+  private async buildTrainingAnalysisContext(userId: string, weekStart: Date, weekEnd: Date) {
+    const [activityCount, recentStates, wellnessMetrics] = await Promise.all([
+      this.prisma.activity.count({
+        where: this.realActivityWhere(userId),
+      }),
+      this.prisma.dailyAthleteState.findMany({
+        where: { userId },
+        orderBy: { date: 'desc' },
+        take: 180,
+      }),
+      this.prisma.dailyWellnessMetric.findMany({
+        where: {
+          userId,
+          date: { gte: weekStart, lte: weekEnd },
+        },
+        orderBy: { date: 'asc' },
+      }),
+    ]);
+
+    const sleepScores = wellnessMetrics
+      .map((metric) => metric.sleepScore)
+      .filter((value): value is number => value != null);
+    const restingHrs = wellnessMetrics
+      .map((metric) => metric.restingHr)
+      .filter((value): value is number => value != null);
+    const hrvValues = wellnessMetrics
+      .map((metric) => metric.hrvMs ?? metric.hrvSdnnMs)
+      .filter((value): value is number => value != null);
+    const sleepDays = this.countMetricDays(wellnessMetrics, (metric) => metric.sleepScore != null);
+    const hrvDays = this.countMetricDays(
+      wellnessMetrics,
+      (metric) => metric.hrvScore != null || metric.hrvMs != null || metric.hrvSdnnMs != null,
+    );
+
+    return {
+      modelCoverage: {
+        activityCount,
+        dailyStateDays: recentStates.length,
+        sleepDays,
+        hrvDays,
+        hasCtlAtl: recentStates.some((state) => state.fitness != null && state.fatigue != null),
+      },
+      recoveryTrend: {
+        averageSleepScore: this.average(sleepScores),
+        averageRestingHr: this.average(restingHrs),
+        hrvDataPoints: hrvValues.length,
+        hrvDirection: this.direction(hrvValues),
+        sleepDirection: this.direction(sleepScores),
+      },
+    };
+  }
+
+  private average(values: number[]): number | null {
+    if (!values.length) return null;
+    return Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1));
+  }
+
+  private direction(values: number[]): 'up' | 'down' | 'stable' | 'insufficient' {
+    if (values.length < 3) return 'insufficient';
+    const midpoint = Math.floor(values.length / 2);
+    const first = this.average(values.slice(0, midpoint));
+    const second = this.average(values.slice(midpoint));
+    if (first == null || second == null) return 'insufficient';
+    const change = second - first;
+    if (Math.abs(change) < 2) return 'stable';
+    return change > 0 ? 'up' : 'down';
   }
 }
