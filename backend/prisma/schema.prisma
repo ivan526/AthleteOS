@@ -22,6 +22,7 @@ model User {
   athleteProfile      AthleteProfile?
   connectedAccounts   ConnectedAccount[]
   dailyAthleteStates  DailyAthleteState[]
+  dailyWellnessMetrics DailyWellnessMetric[]
   dailyRecommendations DailyRecommendation[]
   userFeedbacks       UserFeedback[]
   weeklyReviews       WeeklyReview[]
@@ -121,6 +122,38 @@ model DailyAthleteState {
   user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, date])
+}
+
+// 每日恢复与健康指标历史记录（支持多数据源）
+model DailyWellnessMetric {
+  id                  String                @id @default(uuid())
+  userId              String
+  date                DateTime
+  source              String                // intervals.icu, garmin.connect, etc.
+  sleepScore          Float?                // 0-100
+  sleepSeconds        Int?
+  sleepQuality        Float?
+  hrvScore            Float?                // normalized 0-100 when available
+  hrvMs               Float?                // raw HRV milliseconds
+  hrvSdnnMs           Float?
+  restingHr           Float?
+  readiness           Float?
+  fatigue             Float?
+  soreness            Float?
+  stress              Float?
+  mood                Float?
+  motivation          Float?
+  weightKg            Float?
+  steps               Int?
+  rawData             Json?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date, source])
+  @@index([userId, date])
+  @@index([userId, source])
 }
 
 // 每日训练建议

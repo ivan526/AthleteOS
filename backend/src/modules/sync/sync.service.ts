@@ -341,6 +341,7 @@ export class SyncService {
     const existingStateJson = (existing?.stateJson as Record<string, unknown> | null) ?? {};
     const intervalsHrv = wellness.hrv ?? wellness.hrvSDNN ?? null;
     const hasHrv = intervalsHrv != null || Boolean(existingQuality.hasHrv);
+    await this.upsertIntervalsWellnessMetric(userId, date, wellness, intervalsHrv);
     const dataQuality = {
       ...existingQuality,
       overall: wellness.sleepScore != null || hasHrv ? 'medium' : 'low',
@@ -393,6 +394,62 @@ export class SyncService {
     });
   }
 
+  private async upsertIntervalsWellnessMetric(
+    userId: string,
+    date: Date,
+    wellness: IntervalsWellness,
+    intervalsHrv: number | null,
+  ): Promise<void> {
+    await this.prisma.dailyWellnessMetric.upsert({
+      where: {
+        userId_date_source: {
+          userId,
+          date,
+          source: 'intervals.icu',
+        },
+      },
+      update: {
+        sleepScore: wellness.sleepScore ?? undefined,
+        sleepSeconds: wellness.sleepSecs != null ? Math.round(wellness.sleepSecs) : undefined,
+        sleepQuality: wellness.sleepQuality ?? undefined,
+        hrvScore: intervalsHrv ?? undefined,
+        hrvMs: wellness.hrv ?? undefined,
+        hrvSdnnMs: wellness.hrvSDNN ?? undefined,
+        restingHr: wellness.restingHR ?? undefined,
+        readiness: wellness.readiness ?? undefined,
+        fatigue: wellness.fatigue ?? undefined,
+        soreness: wellness.soreness ?? undefined,
+        stress: wellness.stress ?? undefined,
+        mood: wellness.mood ?? undefined,
+        motivation: wellness.motivation ?? undefined,
+        weightKg: wellness.weight ?? undefined,
+        steps: wellness.steps != null ? Math.round(wellness.steps) : undefined,
+        rawData: wellness as any,
+      },
+      create: {
+        userId,
+        date,
+        source: 'intervals.icu',
+        sleepScore: wellness.sleepScore ?? null,
+        sleepSeconds: wellness.sleepSecs != null ? Math.round(wellness.sleepSecs) : null,
+        sleepQuality: wellness.sleepQuality ?? null,
+        hrvScore: intervalsHrv,
+        hrvMs: wellness.hrv ?? null,
+        hrvSdnnMs: wellness.hrvSDNN ?? null,
+        restingHr: wellness.restingHR ?? null,
+        readiness: wellness.readiness ?? null,
+        fatigue: wellness.fatigue ?? null,
+        soreness: wellness.soreness ?? null,
+        stress: wellness.stress ?? null,
+        mood: wellness.mood ?? null,
+        motivation: wellness.motivation ?? null,
+        weightKg: wellness.weight ?? null,
+        steps: wellness.steps != null ? Math.round(wellness.steps) : null,
+        rawData: wellness as any,
+      },
+    });
+  }
+
   private async processGarminHrv(userId: string, record: GarminHrvRecord): Promise<boolean> {
     const date = new Date(`${record.date}T00:00:00.000Z`);
     const existing = await this.prisma.dailyAthleteState.findUnique({
@@ -414,6 +471,7 @@ export class SyncService {
       raw: record.raw,
       syncedAt: new Date().toISOString(),
     };
+    await this.upsertGarminWellnessMetric(userId, date, record, garminHrv);
 
     if (existing) {
       const hasExistingHrv = existing.hrvScore != null;
@@ -459,6 +517,36 @@ export class SyncService {
       },
     });
     return true;
+  }
+
+  private async upsertGarminWellnessMetric(
+    userId: string,
+    date: Date,
+    record: GarminHrvRecord,
+    garminHrv: Record<string, unknown>,
+  ): Promise<void> {
+    await this.prisma.dailyWellnessMetric.upsert({
+      where: {
+        userId_date_source: {
+          userId,
+          date,
+          source: 'garmin.connect',
+        },
+      },
+      update: {
+        hrvScore: record.hrvScore ?? undefined,
+        hrvMs: record.hrvMs ?? undefined,
+        rawData: garminHrv as any,
+      },
+      create: {
+        userId,
+        date,
+        source: 'garmin.connect',
+        hrvScore: record.hrvScore ?? null,
+        hrvMs: record.hrvMs ?? null,
+        rawData: garminHrv as any,
+      },
+    });
   }
 
   /**

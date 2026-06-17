@@ -282,6 +282,31 @@ export function getModelDataCoverage(): Promise<ModelDataCoverage> {
   return request<ModelDataCoverage>('/model/data-coverage')
 }
 
+export interface WellnessHistoryItem {
+  date: string
+  source: string
+  sleep_score: number | null
+  sleep_seconds: number | null
+  sleep_hours: number | null
+  sleep_quality: number | null
+  hrv_score: number | null
+  hrv_ms: number | null
+  hrv_sdnn_ms: number | null
+  resting_hr: number | null
+  readiness: number | null
+  fatigue: number | null
+  soreness: number | null
+  stress: number | null
+  mood: number | null
+  motivation: number | null
+  weight_kg: number | null
+  steps: number | null
+}
+
+export function getWellnessHistory(days: number = 30): Promise<WellnessHistoryItem[]> {
+  return request<WellnessHistoryItem[]>(`/wellness/history?days=${days}`)
+}
+
 /**
  * 获取周复盘数据
  */
