@@ -209,6 +209,7 @@ export interface Activity {
   id: string
   date: string
   type: string
+  sport?: string
   name: string
   duration: string
   distance: string
@@ -232,6 +233,39 @@ export function getActivities(page: number = 1, limit: number = 30): Promise<Act
  */
 export function getActivityDetail(id: string): Promise<Activity> {
   return request<Activity>(`/activities/${id}`)
+}
+
+export interface HistorySummary {
+  weekStart: string
+  weekEnd: string
+  weeklyTss: number
+  loadChangeVsLastWeek: number
+  trainingDays: number
+  plannedDays: number
+  adherence: number
+  averageIntensity: string
+  trainingRiskLevel: 'low' | 'moderate' | 'elevated' | 'high_caution'
+  fourWeekTrend: Array<{
+    week: string
+    tss: number
+    change: string
+  }>
+}
+
+export function getHistorySummary(): Promise<HistorySummary> {
+  return request<HistorySummary>('/history/summary')
+}
+
+export interface ModelDataCoverage {
+  dataLevel: 'A' | 'B' | 'C' | 'D'
+  historyDays: number
+  available: Array<{ key: string; label: string; count: number; source: string }>
+  missing: string[]
+  confidenceNote: string
+}
+
+export function getModelDataCoverage(): Promise<ModelDataCoverage> {
+  return request<ModelDataCoverage>('/model/data-coverage')
 }
 
 /**

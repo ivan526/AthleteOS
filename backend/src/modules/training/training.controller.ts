@@ -273,6 +273,115 @@ export class TrainingController {
     };
   }
 
+  @Get('weekly-review/latest')
+  async getLatestWeeklyReview() {
+    return this.getWeeklyReview('0');
+  }
+
+  @Get('history/summary')
+  async getHistorySummary() {
+    const userId = await this.currentUser.getUserId();
+    const now = new Date();
+    const currentWeekStart = this.startOfWeek(now);
+    const currentWeekEnd = new Date(currentWeekStart);
+    currentWeekEnd.setDate(currentWeekStart.getDate() + 6);
+    currentWeekEnd.setHours(23, 59, 59, 999);
+
+    const currentActivities = await this.prisma.activity.findMany({
+      where: {
+        connectedAccount: { userId },
+        startTime: { gte: currentWeekStart, lte: currentWeekEnd },
+      },
+    });
+
+    const previousWeekStart = new Date(currentWeekStart);
+    previousWeekStart.setDate(currentWeekStart.getDate() - 7);
+    const previousWeekEnd = new Date(currentWeekEnd);
+    previousWeekEnd.setDate(currentWeekEnd.getDate() - 7);
+    const previousActivities = await this.prisma.activity.findMany({
+      where: {
+        connectedAccount: { userId },
+        startTime: { gte: previousWeekStart, lte: previousWeekEnd },
+      },
+    });
+
+    const weeklyTss = Math.round(currentActivities.reduce((sum, activity) => sum + (activity.tss || 0), 0));
+    const previousTss = previousActivities.reduce((sum, activity) => sum + (activity.tss || 0), 0);
+    const loadChangeVsLastWeek = previousTss > 0 ? (weeklyTss - previousTss) / previousTss : 0;
+    const trainingDays = new Set(currentActivities.map((activity) => activity.startTime.toISOString().split('T')[0])).size;
+    const averageTss = trainingDays ? weeklyTss / trainingDays : 0;
+
+    return {
+      weekStart: this.formatDate(currentWeekStart),
+      weekEnd: this.formatDate(currentWeekEnd),
+      weeklyTss,
+      loadChangeVsLastWeek,
+      trainingDays,
+      plannedDays: 6,
+      adherence: Math.min(trainingDays / 6, 1),
+      averageIntensity: averageTss >= 65 ? '高强度' : averageTss >= 40 ? '中等' : averageTss > 0 ? '低强度' : '无训练',
+      trainingRiskLevel: loadChangeVsLastWeek > 0.2 ? 'moderate' : 'low',
+      fourWeekTrend: await this.buildFourWeekTrend(userId, currentWeekStart),
+    };
+  }
+
+  @Get('model/data-coverage')
+  async getModelDataCoverage() {
+    const userId = await this.currentUser.getUserId();
+    const account = await this.prisma.connectedAccount.findUnique({
+      where: {
+        userId_provider: {
+          userId,
+          provider: 'intervals.icu',
+        },
+      },
+      include: {
+        _count: { select: { activities: true } },
+        activities: {
+          orderBy: { startTime: 'asc' },
+          take: 1,
+        },
+      },
+    });
+    const wellness = await this.prisma.dailyAthleteState.findMany({
+      where: { userId },
+      orderBy: { date: 'desc' },
+      take: 180,
+    });
+
+    const sleepDays = wellness.filter((state) => state.sleepScore != null).length;
+    const hrvDays = wellness.filter((state) => state.hrvScore != null).length;
+    const ctlAtlDays = wellness.filter((state) => state.fitness != null && state.fatigue != null).length;
+    const subjectiveDays = wellness.filter((state) => state.subjectiveFatigue != null).length;
+    const earliestActivity = account?.activities[0]?.startTime;
+    const historyDays = earliestActivity
+      ? Math.ceil((Date.now() - earliestActivity.getTime()) / (1000 * 60 * 60 * 24))
+      : 0;
+
+    const available = [
+      { key: 'activities', label: '训练记录', count: account?._count.activities ?? 0, source: 'Intervals.icu activities' },
+      { key: 'ctl_atl_form', label: 'CTL / ATL / Form', count: ctlAtlDays, source: 'Intervals.icu wellness' },
+      { key: 'sleep', label: '睡眠评分', count: sleepDays, source: 'Intervals.icu wellness.sleepScore' },
+      { key: 'hrv', label: 'HRV', count: hrvDays, source: 'Intervals.icu wellness.hrv / hrvSDNN' },
+    ];
+
+    const missing = [
+      subjectiveDays === 0 ? '主观疲劳/酸痛/压力反馈需要用户在反馈弹窗或每日状态中补充' : null,
+      hrvDays === 0 ? '当前账号最近 180 天没有可用 HRV 数据，模型会降低 HRV 维度置信度' : null,
+      sleepDays === 0 ? '当前账号最近 180 天没有可用睡眠评分，模型会降低睡眠维度置信度' : null,
+      '训练计划/目标阶段仍来自本地偏好，尚未接入外部训练计划日历',
+      '分段/lap 明细尚未落库，活动详情只展示活动级指标',
+    ].filter(Boolean);
+
+    return {
+      dataLevel: historyDays >= 90 ? 'A' : historyDays >= 42 ? 'B' : historyDays >= 14 ? 'C' : 'D',
+      historyDays,
+      available,
+      missing,
+      confidenceNote: missing.length ? '缺失维度会降低对应模型权重置信度，不会伪造数据。' : '核心模型数据覆盖良好。',
+    };
+  }
+
   @Get('state/daily')
   async getDailyState(@Query('date') date?: string) {
     const userId = await this.currentUser.getUserId();
@@ -382,7 +491,8 @@ export class TrainingController {
     return {
       id: activity.id,
       date: activity.startTime.toISOString().split('T')[0],
-      type: activity.sport,
+      type: this.getSportLabel(activity.sport),
+      sport: activity.sport,
       name: this.getActivityName(activity.sport, activity.tss || 0),
       duration: `${Math.round(activity.durationSeconds / 60)} 分钟`,
       durationSeconds: activity.durationSeconds,
@@ -393,9 +503,23 @@ export class TrainingController {
       avgPace: pace,
       avgHr: activity.avgHr ? Math.round(activity.avgHr) : undefined,
       maxHr: activity.maxHr ? Math.round(activity.maxHr) : undefined,
+      avgCadence: activity.rawData?.average_cadence ? Math.round(activity.rawData.average_cadence) : undefined,
+      calories: activity.rawData?.calories ? Math.round(activity.rawData.calories) : undefined,
       elevationGain: activity.elevationGain ? `${Math.round(activity.elevationGain)} m` : undefined,
       notes: activity.rawData?.source === 'demo' ? '演示训练记录' : undefined,
     };
+  }
+
+  private getSportLabel(sport: string) {
+    const labels: Record<string, string> = {
+      running: '跑步',
+      cycling: '骑行',
+      swimming: '游泳',
+      strength: '力量训练',
+      mobility: '灵活性',
+      other: '其他',
+    };
+    return labels[sport] || sport;
   }
 
   private getActivityName(sport: string, tss: number) {
@@ -425,5 +549,68 @@ export class TrainingController {
         type: tss > 0 ? 'training' : 'rest',
       };
     });
+  }
+
+  private startOfWeek(date: Date) {
+    const start = new Date(date);
+    const currentDay = start.getDay();
+    const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1;
+    start.setDate(start.getDate() - daysFromMonday);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+
+  private formatDate(date: Date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  private async buildFourWeekTrend(userId: string, currentWeekStart: Date) {
+    const trend: Array<{ week: string; tss: number; change: string }> = [];
+
+    for (let i = 0; i < 4; i++) {
+      const weekStart = new Date(currentWeekStart);
+      weekStart.setDate(currentWeekStart.getDate() - i * 7);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
+
+      const previousWeekStart = new Date(weekStart);
+      previousWeekStart.setDate(weekStart.getDate() - 7);
+      const previousWeekEnd = new Date(weekEnd);
+      previousWeekEnd.setDate(weekEnd.getDate() - 7);
+
+      const [activities, previousActivities] = await Promise.all([
+        this.prisma.activity.findMany({
+          where: {
+            connectedAccount: { userId },
+            startTime: { gte: weekStart, lte: weekEnd },
+          },
+        }),
+        this.prisma.activity.findMany({
+          where: {
+            connectedAccount: { userId },
+            startTime: { gte: previousWeekStart, lte: previousWeekEnd },
+          },
+        }),
+      ]);
+
+      const tss = Math.round(activities.reduce((sum, activity) => sum + (activity.tss || 0), 0));
+      const previousTss = previousActivities.reduce((sum, activity) => sum + (activity.tss || 0), 0);
+      const change = previousTss > 0 ? Math.round(((tss - previousTss) / previousTss) * 100) : 0;
+
+      trend.push({
+        week: `第${this.getWeekNumber(weekStart)}周`,
+        tss,
+        change: `${change >= 0 ? '+' : ''}${change}%`,
+      });
+    }
+
+    return trend;
+  }
+
+  private getWeekNumber(date: Date) {
+    const firstDay = new Date(date.getFullYear(), 0, 1);
+    const days = Math.floor((date.getTime() - firstDay.getTime()) / 86400000);
+    return Math.ceil((days + firstDay.getDay() + 1) / 7);
   }
 }

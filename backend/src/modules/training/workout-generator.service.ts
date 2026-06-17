@@ -347,11 +347,12 @@ export class WorkoutGeneratorService {
     switch (feedbackType) {
       case 'too_tired':
         // 降低强度
+        adjusted.type = original.sport === 'running' ? 'easy_run' : 'easy_ride';
+        adjusted.structure = this.getTemplate(adjusted.type, original.sport).structure;
         adjusted.intensity = 'easy';
         adjusted.durationMinutes = Math.round(original.durationMinutes * 0.7);
         adjusted.expectedTss = Math.round(original.expectedTss * 0.6);
-        adjusted.title = adjusted.title.startsWith('轻松') ? adjusted.title : `轻松${adjusted.title}`;
-        adjusted.type = original.sport === 'running' ? 'easy_run' : 'easy_ride';
+        adjusted.title = original.sport === 'running' ? '轻松跑' : '轻松骑';
         break;
 
       case 'not_enough_time':
@@ -388,9 +389,10 @@ export class WorkoutGeneratorService {
 
       case 'prefer_easy':
         // 改为轻松训练
-        adjusted.intensity = 'easy';
         adjusted.type = original.sport === 'running' ? 'easy_run' : 'easy_ride';
-        adjusted.title = adjusted.title.startsWith('轻松') ? adjusted.title : `轻松${adjusted.title}`;
+        adjusted.structure = this.getTemplate(adjusted.type, original.sport).structure;
+        adjusted.intensity = 'easy';
+        adjusted.title = original.sport === 'running' ? '轻松跑' : '轻松骑';
         adjusted.expectedTss = Math.round(original.expectedTss * 0.7);
         break;
     }

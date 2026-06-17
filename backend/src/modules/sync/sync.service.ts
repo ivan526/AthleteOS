@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
-import { IntervalsApiService, IntervalsActivity } from './intervals-api.service';
+import { IntervalsApiService, IntervalsActivity, IntervalsWellness } from './intervals-api.service';
 
 @Injectable()
 export class SyncService {
@@ -19,6 +19,7 @@ export class SyncService {
   async syncIntervalsData(userId: string, fullSync: boolean = false): Promise<{
     success: boolean;
     syncedActivities: number;
+    syncedWellness?: number;
     newActivities: number;
     updatedActivities: number;
     lastSyncAt?: Date;
@@ -70,6 +71,12 @@ export class SyncService {
         startDate,
         endDate,
       );
+      const wellness = await this.intervalsApi.getWellness(
+        connectedAccount.athleteId,
+        connectedAccount.apiKey,
+        startDate,
+        endDate,
+      );
 
       let newCount = 0;
       let updatedCount = 0;
@@ -92,6 +99,10 @@ export class SyncService {
         }
       }
 
+      for (const item of wellness) {
+        await this.processWellness(userId, item);
+      }
+
       // 更新同步状态为成功
       const lastSyncAt = new Date();
       await this.prisma.connectedAccount.update({
@@ -99,7 +110,7 @@ export class SyncService {
         data: {
           lastSyncAt,
           syncStatus: 'success',
-          syncMessage: `同步完成：新增 ${newCount} 条，更新 ${updatedCount} 条训练记录`,
+          syncMessage: `同步完成：新增 ${newCount} 条，更新 ${updatedCount} 条训练记录，同步 ${wellness.length} 天健康数据`,
         },
       });
 
@@ -108,6 +119,7 @@ export class SyncService {
       return {
         success: true,
         syncedActivities: activities.length,
+        syncedWellness: wellness.length,
         newActivities: newCount,
         updatedActivities: updatedCount,
         lastSyncAt,
@@ -141,6 +153,7 @@ export class SyncService {
       return {
         success: false,
         syncedActivities: 0,
+        syncedWellness: 0,
         newActivities: 0,
         updatedActivities: 0,
         error: error.message,
@@ -162,6 +175,13 @@ export class SyncService {
       avgPace = (activity.moving_time / activity.distance) * 1000;
     }
 
+    const tss = activity.tss ?? activity.icu_training_load ?? activity.hr_load;
+    const avgHr = activity.avg_hr ?? activity.average_heartrate;
+    const maxHr = activity.max_hr ?? activity.max_heartrate;
+    const avgPower = activity.avg_power ?? activity.icu_average_watts;
+    const normalizedPower = activity.normalized_power ?? activity.icu_weighted_avg_watts;
+    const intensityFactor = activity.intensity_factor ?? (activity.icu_intensity ? activity.icu_intensity / 100 : undefined);
+
     // 准备数据
     const activityData = {
       connectedAccountId,
@@ -170,12 +190,12 @@ export class SyncService {
       startTime: activity.start_date,
       durationSeconds: activity.moving_time,
       distanceMeters: activity.distance,
-      tss: activity.tss,
-      intensityFactor: activity.intensity_factor,
-      avgHr: activity.avg_hr,
-      maxHr: activity.max_hr,
-      avgPower: activity.avg_power,
-      normalizedPower: activity.normalized_power,
+      tss,
+      intensityFactor,
+      avgHr,
+      maxHr,
+      avgPower,
+      normalizedPower,
       avgPace,
       elevationGain: activity.total_elevation_gain,
       rawData: activity as any,
@@ -191,6 +211,55 @@ export class SyncService {
       },
       update: activityData,
       create: activityData,
+    });
+  }
+
+  private async processWellness(userId: string, wellness: IntervalsWellness): Promise<void> {
+    const date = new Date(`${wellness.id}T00:00:00.000Z`);
+    const form = wellness.ctl != null && wellness.atl != null ? wellness.ctl - wellness.atl : null;
+    const dataQuality = {
+      overall: wellness.sleepScore != null || wellness.hrv != null ? 'medium' : 'low',
+      source: 'intervals.icu',
+      hasSleep: wellness.sleepScore != null || wellness.sleepSecs != null,
+      hasHrv: wellness.hrv != null || wellness.hrvSDNN != null,
+      hasCtlAtl: wellness.ctl != null && wellness.atl != null,
+    };
+
+    await this.prisma.dailyAthleteState.upsert({
+      where: {
+        userId_date: {
+          userId,
+          date,
+        },
+      },
+      update: {
+        fitness: wellness.ctl ?? undefined,
+        fatigue: wellness.atl ?? undefined,
+        form: form ?? undefined,
+        sleepScore: wellness.sleepScore ?? undefined,
+        hrvScore: wellness.hrv ?? wellness.hrvSDNN ?? undefined,
+        subjectiveFatigue: wellness.fatigue != null ? Math.round(wellness.fatigue) : undefined,
+        dataQuality: dataQuality as any,
+        stateJson: wellness as any,
+      },
+      create: {
+        userId,
+        date,
+        dataLevel: 'D',
+        dataQuality: dataQuality as any,
+        fitness: wellness.ctl ?? null,
+        fatigue: wellness.atl ?? null,
+        form: form ?? null,
+        sleepScore: wellness.sleepScore ?? null,
+        hrvScore: wellness.hrv ?? wellness.hrvSDNN ?? null,
+        subjectiveFatigue: wellness.fatigue != null ? Math.round(wellness.fatigue) : null,
+        trainingCapacity: 50,
+        capacityStatus: 'Reduce Intensity',
+        trainingRiskScore: 0.3,
+        trainingRiskLevel: 'moderate',
+        confidence: 0.4,
+        stateJson: wellness as any,
+      },
     });
   }
 

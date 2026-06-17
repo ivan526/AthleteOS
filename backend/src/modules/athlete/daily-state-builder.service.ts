@@ -50,6 +50,15 @@ export class DailyStateBuilderService {
             },
           },
         },
+        dailyAthleteStates: {
+          where: {
+            date: {
+              gte: new Date(date.getTime() - 14 * 24 * 60 * 60 * 1000),
+              lte: date,
+            },
+          },
+          orderBy: { date: 'desc' },
+        },
       },
     });
 
@@ -59,6 +68,21 @@ export class DailyStateBuilderService {
 
     const connectedAccount = user.connectedAccounts[0];
     const activities = connectedAccount.activities;
+    const wellnessStates = user.dailyAthleteStates;
+    const latestWellness = wellnessStates[0];
+    const latestSleepScore = this.latestNonNull(wellnessStates, 'sleepScore');
+    const latestHrvScore = this.latestNonNull(wellnessStates, 'hrvScore');
+    const latestSubjectiveFatigue = this.latestNonNull(wellnessStates, 'subjectiveFatigue');
+    const recentSleepScores = wellnessStates
+      .map((state) => state.sleepScore)
+      .filter((score): score is number => score !== null && score !== undefined)
+      .slice(0, 3)
+      .reverse();
+    const recentHrvScores = wellnessStates
+      .map((state) => state.hrvScore)
+      .filter((score): score is number => score !== null && score !== undefined)
+      .slice(0, 3)
+      .reverse();
 
     // 1. 计算Data Level
     const dataLevel = this.calculateDataLevel(activities);
@@ -68,7 +92,10 @@ export class DailyStateBuilderService {
     const dataQuality = this.calculateDataQuality(activities);
 
     // 3. 计算CTL/ATL/Form
-    const { fitness, fatigue, form } = this.calculateFitnessFatigueForm(activities, date);
+    const calculatedLoad = this.calculateFitnessFatigueForm(activities, date);
+    const fitness = latestWellness?.fitness ?? calculatedLoad.fitness;
+    const fatigue = latestWellness?.fatigue ?? calculatedLoad.fatigue;
+    const form = latestWellness?.form ?? calculatedLoad.form;
 
     // 4. 计算ACWR
     const acwr = this.acwrEngine.calculate(activities, date);
@@ -81,7 +108,8 @@ export class DailyStateBuilderService {
       acwr,
       monotony,
       form,
-      // TODO: 添加睡眠和HRV数据
+      sleepScore: latestSleepScore ?? undefined,
+      hrvScore: latestHrvScore ?? undefined,
     });
 
     // 7. 计算训练能力
@@ -90,7 +118,10 @@ export class DailyStateBuilderService {
       acwr,
       monotony,
       dataLevel,
-      // TODO: 添加睡眠、HRV、主观疲劳等数据
+      sleepScore: latestSleepScore ?? undefined,
+      hrvScore: latestHrvScore ?? undefined,
+      subjectiveFatigue: latestSubjectiveFatigue ?? undefined,
+      recoveryTrend: this.calculateRecoveryTrend(wellnessStates),
     });
 
     // 8. 检查硬性安全规则
@@ -99,7 +130,10 @@ export class DailyStateBuilderService {
       trainingRisk,
       acwr,
       form,
-      // TODO: 添加连续训练天数、睡眠HRV趋势等数据
+      recentSleepScores,
+      recentHrvScores,
+      consecutiveHardDays: this.countConsecutiveHardDays(activities, date),
+      consecutiveTrainingDays: this.countConsecutiveTrainingDays(activities, date),
     });
 
     // 9. 计算整体置信度
@@ -117,6 +151,8 @@ export class DailyStateBuilderService {
       fitness,
       fatigue,
       form,
+      sleepScore: latestSleepScore ?? undefined,
+      hrvScore: latestHrvScore ?? undefined,
       acwr,
       monotony,
       trainingCapacity,
@@ -133,6 +169,9 @@ export class DailyStateBuilderService {
       fitness,
       fatigue,
       form,
+      sleepScore: latestSleepScore ?? undefined,
+      hrvScore: latestHrvScore ?? undefined,
+      subjectiveFatigue: latestSubjectiveFatigue ?? undefined,
       acwr,
       monotony,
       trainingCapacity,
@@ -140,6 +179,14 @@ export class DailyStateBuilderService {
       hardSafety,
       confidence,
     };
+  }
+
+  private latestNonNull<T extends 'sleepScore' | 'hrvScore' | 'subjectiveFatigue'>(
+    states: Array<Record<T, number | null>>,
+    field: T,
+  ): number | null {
+    const value = states.find((state) => state[field] !== null && state[field] !== undefined)?.[field];
+    return typeof value === 'number' ? value : null;
   }
 
   /**
@@ -261,6 +308,44 @@ export class DailyStateBuilderService {
     return ema;
   }
 
+  private calculateRecoveryTrend(states: Array<{ sleepScore: number | null; hrvScore: number | null }>): number {
+    const values = states
+      .slice(0, 7)
+      .map((state) => [state.sleepScore, state.hrvScore].filter((value): value is number => value !== null && value !== undefined))
+      .flat();
+
+    if (values.length === 0) return 70;
+    return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+  }
+
+  private countConsecutiveTrainingDays(activities: Activity[], referenceDate: Date): number {
+    return this.countConsecutiveDays(activities, referenceDate, () => true);
+  }
+
+  private countConsecutiveHardDays(activities: Activity[], referenceDate: Date): number {
+    return this.countConsecutiveDays(activities, referenceDate, (activity) => (activity.tss || 0) >= 80);
+  }
+
+  private countConsecutiveDays(
+    activities: Activity[],
+    referenceDate: Date,
+    predicate: (activity: Activity) => boolean,
+  ): number {
+    let count = 0;
+    for (let i = 1; i <= 14; i++) {
+      const date = new Date(referenceDate);
+      date.setDate(referenceDate.getDate() - i);
+      const dateKey = date.toISOString().split('T')[0];
+      const hasMatchingActivity = activities.some((activity) => (
+        activity.startTime.toISOString().split('T')[0] === dateKey && predicate(activity)
+      ));
+
+      if (!hasMatchingActivity) break;
+      count++;
+    }
+    return count;
+  }
+
   /**
    * 计算整体置信度
    */
@@ -297,6 +382,9 @@ export class DailyStateBuilderService {
         form: state.form,
         acwr: state.acwr?.acwr ?? null,
         monotony: state.monotony?.monotony ?? null,
+        sleepScore: state.sleepScore,
+        hrvScore: state.hrvScore,
+        subjectiveFatigue: state.subjectiveFatigue,
         trainingCapacity: state.trainingCapacity.score,
         capacityStatus: state.trainingCapacity.status,
         trainingRiskScore: state.trainingRisk.score,
@@ -314,6 +402,9 @@ export class DailyStateBuilderService {
         form: state.form,
         acwr: state.acwr?.acwr ?? null,
         monotony: state.monotony?.monotony ?? null,
+        sleepScore: state.sleepScore,
+        hrvScore: state.hrvScore,
+        subjectiveFatigue: state.subjectiveFatigue,
         trainingCapacity: state.trainingCapacity.score,
         capacityStatus: state.trainingCapacity.status,
         trainingRiskScore: state.trainingRisk.score,
