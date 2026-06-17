@@ -164,7 +164,7 @@ export class TrainingController {
     const skip = Math.max(pageNumber - 1, 0) * take;
 
     const activities = await this.prisma.activity.findMany({
-      where: { connectedAccount: { userId } },
+      where: this.realActivityWhere(userId),
       orderBy: { startTime: 'desc' },
       skip,
       take,
@@ -182,7 +182,7 @@ export class TrainingController {
   ) {
     const userId = await this.currentUser.getUserId();
     const activity = await this.prisma.activity.findFirst({
-      where: { id, connectedAccount: { userId } },
+      where: this.realActivityWhere(userId, { id }),
     });
 
     if (!activity) {
@@ -219,13 +219,12 @@ export class TrainingController {
     };
 
     const activities = await this.prisma.activity.findMany({
-      where: {
-        connectedAccount: { userId },
+      where: this.realActivityWhere(userId, {
         startTime: {
           gte: weekStart,
           lte: weekEnd,
         },
-      },
+      }),
       orderBy: { startTime: 'asc' },
     });
 
@@ -234,13 +233,12 @@ export class TrainingController {
     const previousWeekEnd = new Date(weekEnd);
     previousWeekEnd.setDate(weekEnd.getDate() - 7);
     const previousActivities = await this.prisma.activity.findMany({
-      where: {
-        connectedAccount: { userId },
+      where: this.realActivityWhere(userId, {
         startTime: {
           gte: previousWeekStart,
           lte: previousWeekEnd,
         },
-      },
+      }),
     });
 
     const weeklyTss = Math.round(activities.reduce((sum, activity) => sum + (activity.tss || 0), 0));
@@ -288,10 +286,9 @@ export class TrainingController {
     currentWeekEnd.setHours(23, 59, 59, 999);
 
     const currentActivities = await this.prisma.activity.findMany({
-      where: {
-        connectedAccount: { userId },
+      where: this.realActivityWhere(userId, {
         startTime: { gte: currentWeekStart, lte: currentWeekEnd },
-      },
+      }),
     });
 
     const previousWeekStart = new Date(currentWeekStart);
@@ -299,10 +296,9 @@ export class TrainingController {
     const previousWeekEnd = new Date(currentWeekEnd);
     previousWeekEnd.setDate(currentWeekEnd.getDate() - 7);
     const previousActivities = await this.prisma.activity.findMany({
-      where: {
-        connectedAccount: { userId },
+      where: this.realActivityWhere(userId, {
         startTime: { gte: previousWeekStart, lte: previousWeekEnd },
-      },
+      }),
     });
 
     const weeklyTss = Math.round(currentActivities.reduce((sum, activity) => sum + (activity.tss || 0), 0));
@@ -336,8 +332,19 @@ export class TrainingController {
         },
       },
       include: {
-        _count: { select: { activities: true } },
+        _count: {
+          select: {
+            activities: {
+              where: {
+                providerActivityId: { not: { startsWith: 'demo-' } },
+              },
+            },
+          },
+        },
         activities: {
+          where: {
+            providerActivityId: { not: { startsWith: 'demo-' } },
+          },
           orderBy: { startTime: 'asc' },
           take: 1,
         },
@@ -506,7 +513,6 @@ export class TrainingController {
       avgCadence: activity.rawData?.average_cadence ? Math.round(activity.rawData.average_cadence) : undefined,
       calories: activity.rawData?.calories ? Math.round(activity.rawData.calories) : undefined,
       elevationGain: activity.elevationGain ? `${Math.round(activity.elevationGain)} m` : undefined,
-      notes: activity.rawData?.source === 'demo' ? '演示训练记录' : undefined,
     };
   }
 
@@ -581,16 +587,14 @@ export class TrainingController {
 
       const [activities, previousActivities] = await Promise.all([
         this.prisma.activity.findMany({
-          where: {
-            connectedAccount: { userId },
+          where: this.realActivityWhere(userId, {
             startTime: { gte: weekStart, lte: weekEnd },
-          },
+          }),
         }),
         this.prisma.activity.findMany({
-          where: {
-            connectedAccount: { userId },
+          where: this.realActivityWhere(userId, {
             startTime: { gte: previousWeekStart, lte: previousWeekEnd },
-          },
+          }),
         }),
       ]);
 
@@ -612,5 +616,13 @@ export class TrainingController {
     const firstDay = new Date(date.getFullYear(), 0, 1);
     const days = Math.floor((date.getTime() - firstDay.getTime()) / 86400000);
     return Math.ceil((days + firstDay.getDay() + 1) / 7);
+  }
+
+  private realActivityWhere(userId: string, extra: Record<string, any> = {}) {
+    return {
+      ...extra,
+      connectedAccount: { userId },
+      providerActivityId: { not: { startsWith: 'demo-' } },
+    };
   }
 }

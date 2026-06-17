@@ -42,6 +42,7 @@ export class DailyStateBuilderService {
           include: {
             activities: {
               where: {
+                providerActivityId: { not: { startsWith: 'demo-' } },
                 startTime: {
                   gte: new Date(date.getTime() - 90 * 24 * 60 * 60 * 1000), // 过去90天数据
                 },
