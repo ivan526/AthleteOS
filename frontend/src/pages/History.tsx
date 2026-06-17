@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Calendar, ChevronRight, TrendingUp, ChevronLeft, ChevronRight as ChevronRightIcon } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import Layout from '../components/Layout'
-import { getActivities, type Activity } from '../lib/api'
+import { getActivities, getHistorySummary, type Activity, type HistorySummary } from '../lib/api'
 
 // 生成日历数据
 const generateCalendarData = (year: number, month: number, activities: Activity[]) => {
@@ -53,17 +53,10 @@ const generateCalendarData = (year: number, month: number, activities: Activity[
   return days
 }
 
-// 周统计数据
-const weeklyStats = [
-  { week: '第24周', tss: 430, change: '+6%' },
-  { week: '第23周', tss: 406, change: '+3%' },
-  { week: '第22周', tss: 394, change: '-2%' },
-  { week: '第21周', tss: 402, change: '+8%' },
-]
-
 const History = () => {
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month'>('week')
   const [activities, setActivities] = useState<Activity[]>([])
+  const [summary, setSummary] = useState<HistorySummary | null>(null)
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [calendarData, setCalendarData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -76,8 +69,12 @@ const History = () => {
       try {
         setLoading(true)
         setError(null)
-        const data = await getActivities(1, 100) // 加载最近100条活动
-        setActivities(data)
+        const [activityData, summaryData] = await Promise.all([
+          getActivities(1, 100),
+          getHistorySummary(),
+        ])
+        setActivities(activityData)
+        setSummary(summaryData)
       } catch (err: any) {
         console.error('加载活动数据失败:', err)
         setError(err.message || '加载失败，请稍后重试')
@@ -96,6 +93,28 @@ const History = () => {
   }, [currentMonth, activities])
 
   const monthNames = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月']
+  const formatDateRange = (start?: string, end?: string) => {
+    if (!start || !end) return ''
+    const startDate = new Date(start)
+    const endDate = new Date(end)
+    return `${startDate.getMonth() + 1}月${startDate.getDate()}日 - ${endDate.getMonth() + 1}月${endDate.getDate()}日`
+  }
+
+  const formatChange = (change?: number) => {
+    if (change === undefined) return '0%'
+    const pct = Math.round(change * 100)
+    return `${pct >= 0 ? '+' : ''}${pct}%`
+  }
+
+  const getRiskText = (level?: string) => {
+    switch (level) {
+      case 'low': return '较低'
+      case 'moderate': return '略有上升'
+      case 'elevated': return '偏高'
+      case 'high_caution': return '较高'
+      default: return '较低'
+    }
+  }
 
   const prevMonth = () => {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))
@@ -303,28 +322,28 @@ const History = () => {
         <div className="card mb-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-text-primary">本周统计</h3>
-            <span className="text-sm text-text-secondary">6月8日 - 6月14日</span>
+            <span className="text-sm text-text-secondary">{formatDateRange(summary?.weekStart, summary?.weekEnd)}</span>
           </div>
 
           <div className="grid grid-cols-2 gap-3 mb-4">
             <div className="p-3 bg-background-weak rounded-lg">
               <p className="text-xs text-text-secondary mb-1">总 TSS</p>
-              <p className="text-2xl font-bold text-text-primary">430</p>
-              <p className="text-xs text-status-success">较上周 +6%</p>
+              <p className="text-2xl font-bold text-text-primary">{summary?.weeklyTss ?? 0}</p>
+              <p className="text-xs text-status-success">较上周 {formatChange(summary?.loadChangeVsLastWeek)}</p>
             </div>
             <div className="p-3 bg-background-weak rounded-lg">
               <p className="text-xs text-text-secondary mb-1">训练次数</p>
-              <p className="text-2xl font-bold text-text-primary">5/6</p>
-              <p className="text-xs text-text-secondary">完成率 83%</p>
+              <p className="text-2xl font-bold text-text-primary">{summary?.trainingDays ?? 0}/{summary?.plannedDays ?? 6}</p>
+              <p className="text-xs text-text-secondary">完成率 {Math.round((summary?.adherence ?? 0) * 100)}%</p>
             </div>
             <div className="p-3 bg-background-weak rounded-lg">
               <p className="text-xs text-text-secondary mb-1">平均强度</p>
-              <p className="text-2xl font-bold text-text-primary">中等</p>
+              <p className="text-2xl font-bold text-text-primary">{summary?.averageIntensity ?? '-'}</p>
               <p className="text-xs text-text-secondary">趋势稳定</p>
             </div>
             <div className="p-3 bg-background-weak rounded-lg">
               <p className="text-xs text-text-secondary mb-1">训练风险</p>
-              <p className="text-2xl font-bold text-status-warning">略有上升</p>
+              <p className="text-2xl font-bold text-status-warning">{getRiskText(summary?.trainingRiskLevel)}</p>
               <p className="text-xs text-text-secondary">建议控制强度</p>
             </div>
           </div>
@@ -336,7 +355,7 @@ const History = () => {
               <span className="text-sm font-medium text-text-primary">近4周TSS趋势</span>
             </div>
             <div className="space-y-2">
-              {weeklyStats.map((stat, index) => (
+              {(summary?.fourWeekTrend ?? []).map((stat, index) => (
                 <div key={index} className="flex items-center justify-between">
                   <span className="text-sm text-text-secondary">{stat.week}</span>
                   <div className="flex items-center gap-3">

@@ -7,19 +7,56 @@ export const IntervalsActivitySchema = z.object({
   id: z.string(),
   type: z.string(),
   start_date: z.coerce.date(),
+  start_date_local: z.string().optional(),
   moving_time: z.number(), // seconds
-  distance: z.number().optional(), // meters
-  tss: z.number().optional(),
-  intensity_factor: z.number().optional(),
-  avg_hr: z.number().optional(),
-  max_hr: z.number().optional(),
-  avg_power: z.number().optional(),
-  normalized_power: z.number().optional(),
-  avg_speed: z.number().optional(), // m/s
-  total_elevation_gain: z.number().optional(), // meters
-});
+  distance: z.number().nullable().optional(), // meters
+  tss: z.number().nullable().optional(),
+  icu_training_load: z.number().nullable().optional(),
+  hr_load: z.number().nullable().optional(),
+  intensity_factor: z.number().nullable().optional(),
+  icu_intensity: z.number().nullable().optional(),
+  avg_hr: z.number().nullable().optional(),
+  average_heartrate: z.number().nullable().optional(),
+  max_hr: z.number().nullable().optional(),
+  max_heartrate: z.number().nullable().optional(),
+  avg_power: z.number().nullable().optional(),
+  icu_average_watts: z.number().nullable().optional(),
+  normalized_power: z.number().nullable().optional(),
+  icu_weighted_avg_watts: z.number().nullable().optional(),
+  avg_speed: z.number().nullable().optional(), // m/s
+  average_speed: z.number().nullable().optional(),
+  average_cadence: z.number().nullable().optional(),
+  calories: z.number().nullable().optional(),
+  name: z.string().nullable().optional(),
+  total_elevation_gain: z.number().nullable().optional(), // meters
+}).passthrough();
 
 export type IntervalsActivity = z.infer<typeof IntervalsActivitySchema>;
+
+export const IntervalsWellnessSchema = z.object({
+  id: z.string(),
+  ctl: z.number().nullable().optional(),
+  atl: z.number().nullable().optional(),
+  rampRate: z.number().nullable().optional(),
+  ctlLoad: z.number().nullable().optional(),
+  atlLoad: z.number().nullable().optional(),
+  sleepScore: z.number().nullable().optional(),
+  sleepSecs: z.number().nullable().optional(),
+  sleepQuality: z.number().nullable().optional(),
+  hrv: z.number().nullable().optional(),
+  hrvSDNN: z.number().nullable().optional(),
+  restingHR: z.number().nullable().optional(),
+  readiness: z.number().nullable().optional(),
+  fatigue: z.number().nullable().optional(),
+  soreness: z.number().nullable().optional(),
+  stress: z.number().nullable().optional(),
+  mood: z.number().nullable().optional(),
+  motivation: z.number().nullable().optional(),
+  weight: z.number().nullable().optional(),
+  steps: z.number().nullable().optional(),
+}).passthrough();
+
+export type IntervalsWellness = z.infer<typeof IntervalsWellnessSchema>;
 
 @Injectable()
 export class IntervalsApiService {
@@ -54,19 +91,11 @@ export class IntervalsApiService {
       const cleanBaseUrl = this.baseUrl.endsWith('/') ? this.baseUrl.slice(0, -1) : this.baseUrl;
       let url = `${cleanBaseUrl}/athlete/${athleteId}/activities?page=${page}&per_page=${perPage}`;
 
-      if (startDate) {
-        url += `&oldest=${startDate.toISOString().split('T')[0]}`;
-      }
-      if (endDate) {
-        url += `&newest=${endDate.toISOString().split('T')[0]}`;
-      }
-
-      this.logger.error(`DEBUG - Requesting URL: ${url}`);
-      this.logger.error(`DEBUG - athleteId: ${athleteId}, apiKey: ${apiKey.substring(0, 5)}...`);
+      if (startDate) url += `&oldest=${startDate.toISOString().split('T')[0]}`;
+      if (endDate) url += `&newest=${endDate.toISOString().split('T')[0]}`;
 
       // 构建Basic Auth头
       const auth = Buffer.from(`${this.apiUser}:${apiKey}`).toString('base64');
-      this.logger.error(`DEBUG - Auth header: Basic ${auth.substring(0, 20)}...`);
 
       const response = await fetch(url, {
         method: 'GET',
@@ -76,8 +105,6 @@ export class IntervalsApiService {
           'Authorization': `Basic ${auth}`,
         },
       });
-
-      this.logger.log(`Response status: ${response.status}`);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -152,14 +179,15 @@ export class IntervalsApiService {
     endDate?: Date,
   ): Promise<any[]> {
     try {
-      let url = `${this.baseUrl}/athlete/${athleteId}/wellness`;
+      const cleanBaseUrl = this.baseUrl.endsWith('/') ? this.baseUrl.slice(0, -1) : this.baseUrl;
+      let url = `${cleanBaseUrl}/athlete/${athleteId}/wellness`;
       const params = new URLSearchParams();
 
       if (startDate) {
-        params.append('start', startDate.toISOString().split('T')[0]);
+        params.append('oldest', startDate.toISOString().split('T')[0]);
       }
       if (endDate) {
-        params.append('end', endDate.toISOString().split('T')[0]);
+        params.append('newest', endDate.toISOString().split('T')[0]);
       }
 
       if (params.toString()) {
@@ -182,7 +210,20 @@ export class IntervalsApiService {
         throw new Error(`Intervals.icu API error: ${response.status} - ${errorText}`);
       }
 
-      return response.json();
+      const data = await response.json();
+      const wellness = data
+        .map((item: any) => {
+          const result = IntervalsWellnessSchema.safeParse(item);
+          if (!result.success) {
+            this.logger.warn(`Invalid wellness data: ${JSON.stringify(result.error.issues)}`);
+            return null;
+          }
+          return result.data;
+        })
+        .filter(Boolean);
+
+      this.logger.log(`Fetched ${wellness.length} valid wellness records from Intervals.icu`);
+      return wellness;
     } catch (error) {
       this.logger.error(`Failed to fetch wellness data: ${error.message}`, error.stack);
       throw new Error(`Intervals.icu API error: ${error.message}`);
