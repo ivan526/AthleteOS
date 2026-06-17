@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { resolve } from 'path';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { IntervalsApiService, IntervalsActivity, IntervalsWellness } from './intervals-api.service';
+import { GarminApiService, GarminHrvRecord } from './garmin-api.service';
 
 @Injectable()
 export class SyncService {
@@ -9,6 +11,7 @@ export class SyncService {
   constructor(
     private prisma: PrismaService,
     private intervalsApi: IntervalsApiService,
+    private garminApi: GarminApiService,
   ) {}
 
   /**
@@ -161,6 +164,115 @@ export class SyncService {
     }
   }
 
+  async syncGarminHrvData(
+    userId: string,
+    fullSync: boolean = false,
+    mfaCode?: string,
+  ): Promise<{
+    success: boolean;
+    fetchedDays: number;
+    syncedHrvDays: number;
+    skippedExistingHrvDays: number;
+    lastSyncAt?: Date;
+    error?: string;
+  }> {
+    const connectedAccount = await this.prisma.connectedAccount.findUnique({
+      where: {
+        userId_provider: {
+          userId,
+          provider: 'garmin.connect',
+        },
+      },
+    });
+
+    if (!connectedAccount || !connectedAccount.apiKey || !connectedAccount.athleteId) {
+      return {
+        success: false,
+        fetchedDays: 0,
+        syncedHrvDays: 0,
+        skippedExistingHrvDays: 0,
+        error: '未配置 Garmin Connect 数据源',
+      };
+    }
+
+    await this.prisma.connectedAccount.update({
+      where: { id: connectedAccount.id },
+      data: {
+        syncStatus: 'syncing',
+        syncMessage: '正在同步 Garmin HRV...',
+      },
+    });
+
+    try {
+      const newest = new Date();
+      const oldest = new Date();
+      if (!fullSync && connectedAccount.lastSyncAt) {
+        oldest.setTime(connectedAccount.lastSyncAt.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else {
+        oldest.setDate(oldest.getDate() - 180);
+      }
+
+      const result = await this.garminApi.getHrvData({
+        email: connectedAccount.athleteId,
+        password: connectedAccount.apiKey,
+        oldest,
+        newest,
+        tokenStore: this.getGarminTokenStore(userId),
+        mfaCode,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error ?? result.details ?? 'Garmin HRV 同步失败');
+      }
+
+      let syncedHrvDays = 0;
+      let skippedExistingHrvDays = 0;
+      for (const record of result.records) {
+        if (record.hrvScore == null) continue;
+        const synced = await this.processGarminHrv(userId, record);
+        if (synced) {
+          syncedHrvDays++;
+        } else {
+          skippedExistingHrvDays++;
+        }
+      }
+
+      const lastSyncAt = new Date();
+      await this.prisma.connectedAccount.update({
+        where: { id: connectedAccount.id },
+        data: {
+          lastSyncAt,
+          syncStatus: 'success',
+          syncMessage: `同步完成：获取 ${result.fetchedDays} 天，补充 ${syncedHrvDays} 天 HRV`,
+        },
+      });
+
+      return {
+        success: true,
+        fetchedDays: result.fetchedDays,
+        syncedHrvDays,
+        skippedExistingHrvDays,
+        lastSyncAt,
+      };
+    } catch (error) {
+      this.logger.error(`Garmin HRV sync failed: ${error.message}`, error.stack);
+      await this.prisma.connectedAccount.update({
+        where: { id: connectedAccount.id },
+        data: {
+          syncStatus: 'failed',
+          syncMessage: `Garmin HRV 同步失败：${error.message}`,
+        },
+      });
+      return {
+        success: false,
+        fetchedDays: 0,
+        syncedHrvDays: 0,
+        skippedExistingHrvDays: 0,
+        error: error.message,
+      };
+    }
+  }
+
   /**
    * 处理单个活动数据，转换为内部格式并存储
    */
@@ -217,11 +329,25 @@ export class SyncService {
   private async processWellness(userId: string, wellness: IntervalsWellness): Promise<void> {
     const date = new Date(`${wellness.id}T00:00:00.000Z`);
     const form = wellness.ctl != null && wellness.atl != null ? wellness.ctl - wellness.atl : null;
+    const existing = await this.prisma.dailyAthleteState.findUnique({
+      where: {
+        userId_date: {
+          userId,
+          date,
+        },
+      },
+    });
+    const existingQuality = (existing?.dataQuality as Record<string, unknown> | null) ?? {};
+    const existingStateJson = (existing?.stateJson as Record<string, unknown> | null) ?? {};
+    const intervalsHrv = wellness.hrv ?? wellness.hrvSDNN ?? null;
+    const hasHrv = intervalsHrv != null || Boolean(existingQuality.hasHrv);
     const dataQuality = {
-      overall: wellness.sleepScore != null || wellness.hrv != null ? 'medium' : 'low',
+      ...existingQuality,
+      overall: wellness.sleepScore != null || hasHrv ? 'medium' : 'low',
       source: 'intervals.icu',
-      hasSleep: wellness.sleepScore != null || wellness.sleepSecs != null,
-      hasHrv: wellness.hrv != null || wellness.hrvSDNN != null,
+      hasSleep: wellness.sleepScore != null || wellness.sleepSecs != null || Boolean(existingQuality.hasSleep),
+      hasHrv,
+      hrvSource: intervalsHrv != null ? 'intervals.icu' : existingQuality.hrvSource,
       hasCtlAtl: wellness.ctl != null && wellness.atl != null,
     };
 
@@ -237,10 +363,14 @@ export class SyncService {
         fatigue: wellness.atl ?? undefined,
         form: form ?? undefined,
         sleepScore: wellness.sleepScore ?? undefined,
-        hrvScore: wellness.hrv ?? wellness.hrvSDNN ?? undefined,
+        hrvScore: intervalsHrv ?? undefined,
         subjectiveFatigue: wellness.fatigue != null ? Math.round(wellness.fatigue) : undefined,
         dataQuality: dataQuality as any,
-        stateJson: wellness as any,
+        stateJson: {
+          ...existingStateJson,
+          intervals: wellness,
+          garminHrv: existingStateJson.garminHrv,
+        } as any,
       },
       create: {
         userId,
@@ -251,16 +381,84 @@ export class SyncService {
         fatigue: wellness.atl ?? null,
         form: form ?? null,
         sleepScore: wellness.sleepScore ?? null,
-        hrvScore: wellness.hrv ?? wellness.hrvSDNN ?? null,
+        hrvScore: intervalsHrv,
         subjectiveFatigue: wellness.fatigue != null ? Math.round(wellness.fatigue) : null,
         trainingCapacity: 50,
         capacityStatus: 'Reduce Intensity',
         trainingRiskScore: 0.3,
         trainingRiskLevel: 'moderate',
         confidence: 0.4,
-        stateJson: wellness as any,
+        stateJson: { intervals: wellness } as any,
       },
     });
+  }
+
+  private async processGarminHrv(userId: string, record: GarminHrvRecord): Promise<boolean> {
+    const date = new Date(`${record.date}T00:00:00.000Z`);
+    const existing = await this.prisma.dailyAthleteState.findUnique({
+      where: {
+        userId_date: {
+          userId,
+          date,
+        },
+      },
+    });
+    const stateJson = (existing?.stateJson as Record<string, unknown> | null) ?? {};
+    const dataQuality = (existing?.dataQuality as Record<string, unknown> | null) ?? {};
+    const garminHrv = {
+      score: record.hrvScore,
+      ms: record.hrvMs,
+      status: record.status,
+      feedbackPhrase: record.feedbackPhrase,
+      baseline: record.baseline,
+      raw: record.raw,
+      syncedAt: new Date().toISOString(),
+    };
+
+    if (existing) {
+      const hasExistingHrv = existing.hrvScore != null;
+      await this.prisma.dailyAthleteState.update({
+        where: { id: existing.id },
+        data: {
+          hrvScore: hasExistingHrv ? undefined : record.hrvScore,
+          dataQuality: {
+            ...dataQuality,
+            overall: dataQuality.overall && dataQuality.overall !== 'low' ? dataQuality.overall : 'medium',
+            hasHrv: true,
+            hrvSource: hasExistingHrv ? dataQuality.hrvSource ?? 'intervals.icu' : 'garmin.connect',
+          } as any,
+          stateJson: {
+            ...stateJson,
+            garminHrv,
+          } as any,
+        },
+      });
+      return !hasExistingHrv;
+    }
+
+    await this.prisma.dailyAthleteState.create({
+      data: {
+        userId,
+        date,
+        dataLevel: 'D',
+        dataQuality: {
+          overall: 'medium',
+          source: 'garmin.connect',
+          hasSleep: false,
+          hasHrv: true,
+          hrvSource: 'garmin.connect',
+          hasCtlAtl: false,
+        } as any,
+        hrvScore: record.hrvScore,
+        trainingCapacity: 50,
+        capacityStatus: 'Reduce Intensity',
+        trainingRiskScore: 0.3,
+        trainingRiskLevel: 'moderate',
+        confidence: 0.4,
+        stateJson: { garminHrv } as any,
+      },
+    });
+    return true;
   }
 
   /**
@@ -325,9 +523,19 @@ export class SyncService {
       };
     }
 
-    const dailyStateCount = await this.prisma.dailyAthleteState.count({
-      where: { userId },
-    });
+    const [dailyStateCount, garminAccount] = await Promise.all([
+      this.prisma.dailyAthleteState.count({
+        where: { userId },
+      }),
+      this.prisma.connectedAccount.findUnique({
+        where: {
+          userId_provider: {
+            userId,
+            provider: 'garmin.connect',
+          },
+        },
+      }),
+    ]);
 
     return {
       connected: connectedAccount.syncStatus !== 'not_connected',
@@ -337,11 +545,18 @@ export class SyncService {
       activityCount: connectedAccount._count.activities,
       dailyStateCount,
       latestActivityDate: connectedAccount.activities[0]?.startTime ?? null,
+      garmin: {
+        connected: Boolean(garminAccount?.apiKey && garminAccount.apiKey !== 'demo'),
+        syncStatus: garminAccount?.syncStatus ?? 'not_connected',
+        syncMessage: garminAccount?.syncMessage ?? '未配置 Garmin Connect',
+        lastSyncAt: garminAccount?.lastSyncAt ?? null,
+        email: garminAccount?.athleteId ?? '',
+      },
     };
   }
 
   async getSettings(userId: string) {
-    const [profile, connectedAccount] = await Promise.all([
+    const [profile, connectedAccount, garminAccount] = await Promise.all([
       this.prisma.athleteProfile.findUnique({ where: { userId } }),
       this.prisma.connectedAccount.findUnique({
         where: {
@@ -351,12 +566,25 @@ export class SyncService {
           },
         },
       }),
+      this.prisma.connectedAccount.findUnique({
+        where: {
+          userId_provider: {
+            userId,
+            provider: 'garmin.connect',
+          },
+        },
+      }),
     ]);
 
     return {
       intervals_athlete_id: connectedAccount?.athleteId ?? '',
       has_credentials: Boolean(connectedAccount?.apiKey && connectedAccount.apiKey !== 'demo'),
       last_sync_at: connectedAccount?.lastSyncAt ?? null,
+      garmin_email: garminAccount?.athleteId ?? '',
+      has_garmin_credentials: Boolean(garminAccount?.apiKey && garminAccount.apiKey !== 'demo'),
+      garmin_last_sync_at: garminAccount?.lastSyncAt ?? null,
+      garmin_sync_status: garminAccount?.syncStatus ?? 'not_connected',
+      garmin_sync_message: garminAccount?.syncMessage ?? '未配置 Garmin Connect',
       primary_sport: profile?.primarySport ?? 'running',
       weekly_available_days: profile?.weeklyAvailableDays ?? 5,
       preferred_sports: profile?.preferredSports ?? ['running', 'cycling'],
@@ -371,18 +599,30 @@ export class SyncService {
     data: {
       intervals_api_key?: string;
       intervals_athlete_id?: string;
+      garmin_email?: string;
+      garmin_password?: string;
       primary_sport?: string;
       weekly_available_days?: number;
     },
   ) {
-    const existingAccount = await this.prisma.connectedAccount.findUnique({
-      where: {
-        userId_provider: {
-          userId,
-          provider: 'intervals.icu',
+    const [existingAccount, existingGarminAccount] = await Promise.all([
+      this.prisma.connectedAccount.findUnique({
+        where: {
+          userId_provider: {
+            userId,
+            provider: 'intervals.icu',
+          },
         },
-      },
-    });
+      }),
+      this.prisma.connectedAccount.findUnique({
+        where: {
+          userId_provider: {
+            userId,
+            provider: 'garmin.connect',
+          },
+        },
+      }),
+    ]);
 
     await this.prisma.athleteProfile.upsert({
       where: { userId },
@@ -423,6 +663,35 @@ export class SyncService {
       });
     }
 
+    if (data.garmin_email || data.garmin_password) {
+      await this.prisma.connectedAccount.upsert({
+        where: {
+          userId_provider: {
+            userId,
+            provider: 'garmin.connect',
+          },
+        },
+        update: {
+          athleteId: data.garmin_email ?? existingGarminAccount?.athleteId ?? '',
+          apiKey: data.garmin_password ?? existingGarminAccount?.apiKey ?? '',
+          syncStatus: 'connected',
+          syncMessage: '已保存 Garmin Connect 凭证',
+        },
+        create: {
+          userId,
+          provider: 'garmin.connect',
+          athleteId: data.garmin_email ?? '',
+          apiKey: data.garmin_password ?? '',
+          syncStatus: 'connected',
+          syncMessage: '已保存 Garmin Connect 凭证',
+        },
+      });
+    }
+
     return this.getSettings(userId);
+  }
+
+  private getGarminTokenStore(userId: string): string {
+    return resolve(process.cwd(), '.cache', 'garmin', userId);
   }
 }

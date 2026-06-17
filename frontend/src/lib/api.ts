@@ -167,6 +167,13 @@ export function syncIntervals(fullSync: boolean = false): Promise<any> {
   })
 }
 
+export function syncGarmin(fullSync: boolean = false, mfaCode?: string): Promise<any> {
+  return request('/sync/garmin', {
+    method: 'POST',
+    body: JSON.stringify({ fullSync, mfa_code: mfaCode }),
+  })
+}
+
 /**
  * 获取同步状态
  */
@@ -178,6 +185,11 @@ export interface UserSettings {
   intervals_athlete_id: string
   has_credentials: boolean
   last_sync_at: string | null
+  garmin_email: string
+  has_garmin_credentials: boolean
+  garmin_last_sync_at: string | null
+  garmin_sync_status: string
+  garmin_sync_message: string
   primary_sport: string
   weekly_available_days: number
   preferred_sports: string[]
@@ -193,6 +205,8 @@ export function getSettings(): Promise<UserSettings> {
 export function updateSettings(data: {
   intervals_api_key?: string
   intervals_athlete_id?: string
+  garmin_email?: string
+  garmin_password?: string
   primary_sport?: string
   weekly_available_days?: number
 }): Promise<UserSettings> {

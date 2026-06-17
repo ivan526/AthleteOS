@@ -73,11 +73,6 @@ export class TrainingCapacityEngineService {
       subscores.hrv = hrvScore;
       totalScore += hrvScore * this.WEIGHTS.hrv;
       totalWeight += this.WEIGHTS.hrv;
-    } else {
-      subscores.hrv = 70;
-      totalScore += 70 * this.WEIGHTS.hrv;
-      totalWeight += this.WEIGHTS.hrv;
-      confidence *= 0.9;
     }
 
     // Form评分 (转换为0-100)

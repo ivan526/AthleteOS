@@ -369,12 +369,12 @@ export class TrainingController {
       { key: 'activities', label: '训练记录', count: account?._count.activities ?? 0, source: 'Intervals.icu activities' },
       { key: 'ctl_atl_form', label: 'CTL / ATL / Form', count: ctlAtlDays, source: 'Intervals.icu wellness' },
       { key: 'sleep', label: '睡眠评分', count: sleepDays, source: 'Intervals.icu wellness.sleepScore' },
-      { key: 'hrv', label: 'HRV', count: hrvDays, source: 'Intervals.icu wellness.hrv / hrvSDNN' },
+      { key: 'hrv', label: 'HRV', count: hrvDays, source: 'Intervals.icu wellness.hrv / hrvSDNN，Garmin Connect 作为补充' },
     ];
 
     const missing = [
       subjectiveDays === 0 ? '主观疲劳/酸痛/压力反馈需要用户在反馈弹窗或每日状态中补充' : null,
-      hrvDays === 0 ? '当前账号最近 180 天没有可用 HRV 数据，模型会降低 HRV 维度置信度' : null,
+      hrvDays === 0 ? '当前账号最近 180 天没有可用 HRV 数据，模型会使用睡眠、静息心率和训练负荷替代，不伪造 HRV' : null,
       sleepDays === 0 ? '当前账号最近 180 天没有可用睡眠评分，模型会降低睡眠维度置信度' : null,
       '训练计划/目标阶段仍来自本地偏好，尚未接入外部训练计划日历',
       '分段/lap 明细尚未落库，活动详情只展示活动级指标',

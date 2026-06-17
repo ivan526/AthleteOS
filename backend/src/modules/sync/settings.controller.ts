@@ -21,6 +21,8 @@ export class SettingsController {
     body: {
       intervals_api_key?: string;
       intervals_athlete_id?: string;
+      garmin_email?: string;
+      garmin_password?: string;
       primary_sport?: string;
       weekly_available_days?: number;
     },

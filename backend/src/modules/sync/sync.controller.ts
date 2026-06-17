@@ -26,6 +26,19 @@ export class SyncController {
     return result;
   }
 
+  @Post('garmin')
+  async syncGarmin(
+    @Body() body: { fullSync?: boolean; mfa_code?: string },
+  ) {
+    const userId = await this.currentUser.getUserId();
+
+    return this.syncService.syncGarminHrvData(
+      userId,
+      body.fullSync || false,
+      body.mfa_code,
+    );
+  }
+
   /**
    * 获取同步状态
    */
