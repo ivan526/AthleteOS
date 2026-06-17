@@ -350,14 +350,29 @@ export class TrainingController {
         },
       },
     });
-    const wellness = await this.prisma.dailyAthleteState.findMany({
-      where: { userId },
-      orderBy: { date: 'desc' },
-      take: 180,
-    });
+    const since = new Date();
+    since.setDate(since.getDate() - 180);
+    const [wellness, wellnessMetrics] = await Promise.all([
+      this.prisma.dailyAthleteState.findMany({
+        where: { userId },
+        orderBy: { date: 'desc' },
+        take: 180,
+      }),
+      this.prisma.dailyWellnessMetric.findMany({
+        where: {
+          userId,
+          date: { gte: since },
+        },
+        orderBy: { date: 'desc' },
+      }),
+    ]);
 
-    const sleepDays = wellness.filter((state) => state.sleepScore != null).length;
-    const hrvDays = wellness.filter((state) => state.hrvScore != null).length;
+    const sleepDays = this.countMetricDays(wellnessMetrics, (metric) => metric.sleepScore != null);
+    const sleepDurationDays = this.countMetricDays(wellnessMetrics, (metric) => metric.sleepSeconds != null);
+    const hrvDays = this.countMetricDays(
+      wellnessMetrics,
+      (metric) => metric.hrvScore != null || metric.hrvMs != null || metric.hrvSdnnMs != null,
+    );
     const ctlAtlDays = wellness.filter((state) => state.fitness != null && state.fatigue != null).length;
     const subjectiveDays = wellness.filter((state) => state.subjectiveFatigue != null).length;
     const earliestActivity = account?.activities[0]?.startTime;
@@ -368,8 +383,9 @@ export class TrainingController {
     const available = [
       { key: 'activities', label: '训练记录', count: account?._count.activities ?? 0, source: 'Intervals.icu activities' },
       { key: 'ctl_atl_form', label: 'CTL / ATL / Form', count: ctlAtlDays, source: 'Intervals.icu wellness' },
-      { key: 'sleep', label: '睡眠评分', count: sleepDays, source: 'Intervals.icu wellness.sleepScore' },
-      { key: 'hrv', label: 'HRV', count: hrvDays, source: 'Intervals.icu wellness.hrv / hrvSDNN，Garmin Connect 作为补充' },
+      { key: 'sleep', label: '睡眠评分', count: sleepDays, source: 'DailyWellnessMetric.sleepScore' },
+      { key: 'sleep_duration', label: '睡眠时长', count: sleepDurationDays, source: 'DailyWellnessMetric.sleepSeconds' },
+      { key: 'hrv', label: 'HRV', count: hrvDays, source: 'DailyWellnessMetric，Intervals.icu 优先，Garmin Connect 作为补充' },
     ];
 
     const missing = [
@@ -387,6 +403,46 @@ export class TrainingController {
       missing,
       confidenceNote: missing.length ? '缺失维度会降低对应模型权重置信度，不会伪造数据。' : '核心模型数据覆盖良好。',
     };
+  }
+
+  @Get('wellness/history')
+  async getWellnessHistory(@Query('days') days = '30') {
+    const userId = await this.currentUser.getUserId();
+    const daysNumber = Math.max(1, Math.min(Number(days) || 30, 365));
+    const since = this.dateOnly(new Date());
+    since.setDate(since.getDate() - daysNumber + 1);
+
+    const metrics = await this.prisma.dailyWellnessMetric.findMany({
+      where: {
+        userId,
+        date: { gte: since },
+      },
+      orderBy: [
+        { date: 'desc' },
+        { source: 'asc' },
+      ],
+    });
+
+    return metrics.map((metric) => ({
+      date: this.formatDate(metric.date),
+      source: metric.source,
+      sleep_score: metric.sleepScore,
+      sleep_seconds: metric.sleepSeconds,
+      sleep_hours: metric.sleepSeconds != null ? Number((metric.sleepSeconds / 3600).toFixed(2)) : null,
+      sleep_quality: metric.sleepQuality,
+      hrv_score: metric.hrvScore,
+      hrv_ms: metric.hrvMs,
+      hrv_sdnn_ms: metric.hrvSdnnMs,
+      resting_hr: metric.restingHr,
+      readiness: metric.readiness,
+      fatigue: metric.fatigue,
+      soreness: metric.soreness,
+      stress: metric.stress,
+      mood: metric.mood,
+      motivation: metric.motivation,
+      weight_kg: metric.weightKg,
+      steps: metric.steps,
+    }));
   }
 
   @Get('state/daily')
@@ -624,5 +680,13 @@ export class TrainingController {
       connectedAccount: { userId },
       providerActivityId: { not: { startsWith: 'demo-' } },
     };
+  }
+
+  private countMetricDays<T extends { date: Date }>(metrics: T[], predicate: (metric: T) => boolean) {
+    return new Set(
+      metrics
+        .filter(predicate)
+        .map((metric) => this.formatDate(metric.date)),
+    ).size;
   }
 }
