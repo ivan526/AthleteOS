@@ -45,6 +45,11 @@ export interface WorkoutRecommendation {
 export interface Explanation {
   simple: string
   reasons: string[]
+  ai_coach?: {
+    used_llm: boolean
+    safety_filtered: boolean
+    fallback_used: boolean
+  }
   technical: {
     form: number
     ctl?: number
@@ -317,6 +322,40 @@ export function getWellnessHistory(days: number = 30): Promise<WellnessHistoryIt
   return request<WellnessHistoryItem[]>(`/wellness/history?days=${days}`)
 }
 
+export interface AiCoachAnswer {
+  answer: string
+  used_llm: boolean
+  safety_filtered: boolean
+  fallback_used: boolean
+}
+
+export function askAiCoach(question: string, pain: boolean = false): Promise<AiCoachAnswer> {
+  return request<AiCoachAnswer>('/ai-coach/ask', {
+    method: 'POST',
+    body: JSON.stringify({ question, pain }),
+  })
+}
+
+export interface AiCoachAudit {
+  id: string
+  interactionType: string
+  provider: string | null
+  model: string | null
+  inputEvidence: Record<string, unknown>
+  ruleResult: Record<string, unknown> | null
+  rawOutput: string | null
+  finalOutput: string
+  guardrailReasons: string[] | null
+  safetyFiltered: boolean
+  fallbackUsed: boolean
+  errorMessage: string | null
+  createdAt: string
+}
+
+export function getAiCoachAudits(limit: number = 20): Promise<AiCoachAudit[]> {
+  return request<AiCoachAudit[]>(`/ai-coach/audits?limit=${limit}`)
+}
+
 /**
  * 获取周复盘数据
  */
@@ -330,6 +369,27 @@ export interface WeeklyReview {
   trainingRiskLevel: 'low' | 'moderate' | 'elevated' | 'high_caution'
   highlights: string[]
   warnings: string[]
+  nextWeekRecommendation: string
+  aiCoachSummary?: string
+  aiCoach?: {
+    usedLlm: boolean
+    safetyFiltered: boolean
+    fallbackUsed: boolean
+  }
+  modelCoverage?: {
+    activityCount: number
+    dailyStateDays: number
+    sleepDays: number
+    hrvDays: number
+    hasCtlAtl: boolean
+  }
+  recoveryTrend?: {
+    averageSleepScore: number | null
+    averageRestingHr: number | null
+    hrvDataPoints: number
+    hrvDirection: 'up' | 'down' | 'stable' | 'insufficient'
+    sleepDirection: 'up' | 'down' | 'stable' | 'insufficient'
+  }
   dailyStats: Array<{
     date: string
     tss: number

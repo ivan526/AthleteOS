@@ -27,6 +27,7 @@ model User {
   userFeedbacks       UserFeedback[]
   weeklyReviews       WeeklyReview[]
   llmSetting          LlmSetting?
+  aiCoachAudits       AiCoachAudit[]
 }
 
 // AI Coach LLM 配置
@@ -42,6 +43,29 @@ model LlmSetting {
   updatedAt           DateTime              @updatedAt
 
   user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// AI Coach 调用与安全审计
+model AiCoachAudit {
+  id                  String                @id @default(uuid())
+  userId              String
+  interactionType     String                // training_explanation, feedback_explanation, training_analysis, question
+  provider            String?
+  model               String?
+  inputEvidence       Json
+  ruleResult          Json?
+  rawOutput            String?
+  finalOutput          String
+  guardrailReasons    Json?
+  safetyFiltered      Boolean               @default(false)
+  fallbackUsed        Boolean               @default(false)
+  errorMessage        String?
+  createdAt           DateTime              @default(now())
+
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([interactionType, createdAt])
 }
 
 // 运动员档案

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Trophy, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Trophy, AlertTriangle, Bot } from 'lucide-react'
 import Layout from '../components/Layout'
 import { getWeeklyReview, type WeeklyReview as WeeklyReviewType } from '../lib/api'
 
@@ -174,6 +174,25 @@ const WeeklyReview = () => {
             </div>
           </div>
         </div>
+
+        {data.aiCoachSummary && (
+          <div className="card mb-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <Bot size={20} className="text-primary" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="text-lg font-semibold text-text-primary">AI Coach 分析</h3>
+                  <span className="text-xs text-text-secondary">
+                    {data.aiCoach?.usedLlm ? 'LLM 增强' : '规则总结'}
+                  </span>
+                </div>
+                <p className="text-text-secondary">{data.aiCoachSummary}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 每日TSS分布 */}
         <div className="card mb-4">

@@ -8,14 +8,14 @@
 
 ## P0 基础补齐：AI Coach 与 LLM 配置
 
-- [ ] 定义 AI Coach 边界：LLM 只负责解释、总结、问答和话术，不直接决定训练负荷。
-- [ ] 完成 LLM 设置持久化与设置页配置。
-- [ ] 新增 `LlmCoachService` 抽象，支持 OpenAI-compatible Provider、model、baseUrl、apiKey。
-- [ ] 为 AI Coach 输出建立安全 guardrail：不得覆盖 Hard Safety Rules、不得医疗诊断、不得建议忽略疼痛。
-- [ ] 在训练解释中增加可选 LLM polish 层：输入系统生成的结构化证据，输出更自然解释。
-- [ ] 在训练反馈中增加可选 LLM 解释层：只解释“为什么调整”，不改变调整结果。
-- [ ] 在训练分析中增加可选 LLM 总结层：基于周报、模型覆盖、恢复趋势生成自然语言总结。
-- [ ] 添加 AI Coach 审计日志：记录输入证据、LLM 输出、规则结果和是否被安全过滤。
+- [x] 定义 AI Coach 边界：LLM 只负责解释、总结、问答和话术，不直接决定训练负荷。
+- [x] 完成 LLM 设置持久化与设置页配置。
+- [x] 新增 `LlmCoachService` 抽象，支持 OpenAI-compatible Provider、model、baseUrl、apiKey。
+- [x] 为 AI Coach 输出建立安全 guardrail：不得覆盖 Hard Safety Rules、不得医疗诊断、不得建议忽略疼痛。
+- [x] 在训练解释中增加可选 LLM polish 层：输入系统生成的结构化证据，输出更自然解释。
+- [x] 在训练反馈中增加可选 LLM 解释层：只解释“为什么调整”，不改变调整结果。
+- [x] 在训练分析中增加可选 LLM 总结层：基于周报、模型覆盖、恢复趋势生成自然语言总结。
+- [x] 添加 AI Coach 审计日志：记录输入证据、LLM 输出、规则结果和是否被安全过滤。
 
 ## V2 Epic 1：Performance Prediction Engine
 

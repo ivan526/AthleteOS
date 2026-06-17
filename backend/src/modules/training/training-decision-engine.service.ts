@@ -5,6 +5,7 @@ import { HardSafetyRulesService } from '../athlete/hard-safety-rules.service';
 import { WorkoutGeneratorService } from './workout-generator.service';
 import { ExplanationEngineService } from './explanation-engine.service';
 import { TrainingDecision, WorkoutRecommendation, FeedbackType, AdjustedRecommendation } from './types';
+import { LlmCoachService } from './llm-coach.service';
 
 /**
  * 训练决策引擎
@@ -19,6 +20,7 @@ export class TrainingDecisionEngineService {
     private hardSafetyRules: HardSafetyRulesService,
     private workoutGenerator: WorkoutGeneratorService,
     private explanationEngine: ExplanationEngineService,
+    private llmCoach: LlmCoachService,
   ) {}
 
   /**
@@ -52,9 +54,24 @@ export class TrainingDecisionEngineService {
 
     // 生成解释
     const explanation = this.explanationEngine.generateExplanation(state, recommendation);
-
-    // 准备决策依据
     const evidence = this.buildEvidence(state);
+    const aiCoachExplanation = await this.llmCoach.polishTrainingExplanation({
+      userId,
+      fallbackText: explanation.simple,
+      evidence: {
+        metrics: Object.fromEntries(evidence.map((item) => [item.key, item.value])),
+        reasons: explanation.reasons,
+        dataLevel: state.dataLevel,
+        dataQuality: state.dataQuality,
+      },
+      ruleResult: {
+        recommendation,
+        trainingRisk: state.trainingRisk,
+        hardSafety: state.hardSafety,
+      },
+      hardSafetyTriggered: state.hardSafety?.triggered || false,
+    });
+    explanation.simple = aiCoachExplanation.text;
 
     // 构建决策对象
     const decision: TrainingDecision = {
@@ -78,7 +95,7 @@ export class TrainingDecisionEngineService {
         technicalReason: this.buildTechnicalReason(state),
       },
       alternatives: this.buildAlternatives(recommendation),
-      decisionJson: this.buildDecisionJson(userId, state, recommendation, explanation),
+      decisionJson: this.buildDecisionJson(userId, state, recommendation, explanation, aiCoachExplanation),
     };
 
     // 保存到数据库
@@ -131,19 +148,38 @@ export class TrainingDecisionEngineService {
       // 保存用户反馈
       await this.saveUserFeedback(userId, originalRecommendationId, feedbackType, params);
 
-      // 保存调整后的建议
-      const newRecommendation = await this.saveAdjustedRecommendation(
+      const fallbackReason = '你反馈身体有不适，已为你调整为恢复性训练。如有持续疼痛，请咨询专业医生。';
+      const aiCoachReason = await this.llmCoach.explainFeedback({
         userId,
+        fallbackText: fallbackReason,
+        evidence: {
+          feedbackType,
+          painArea: params.painArea,
+          originalWorkout: this.toWorkoutRecommendation(original),
+          adjustedWorkout,
+        },
+        ruleResult: {
+          hardSafetyTriggered: true,
+          adjustmentReason: feedbackType,
+          adjustedWorkout,
+        },
+        hardSafetyTriggered: true,
+        painReported: true,
+      });
+
+      await this.saveAdjustedRecommendation(
         original,
         adjustedWorkout,
         feedbackType,
+        aiCoachReason.text,
+        aiCoachReason,
       );
 
       return {
         adjusted: true,
         originalRecommendationId,
         newRecommendation: adjustedWorkout,
-        reason: '你反馈身体有不适，已为你调整为恢复性训练。如有持续疼痛，请咨询专业医生。',
+        reason: aiCoachReason.text,
         decision: {
           hardSafetyTriggered: true,
           adjustmentReason: feedbackType,
@@ -173,26 +209,44 @@ export class TrainingDecisionEngineService {
     // 保存用户反馈
     await this.saveUserFeedback(userId, originalRecommendationId, feedbackType, params);
 
-    // 保存调整后的建议
-    const newRecommendation = await this.saveAdjustedRecommendation(
-      userId,
-      original,
-      adjustedWorkout,
-      feedbackType,
-    );
-
-    // 生成调整解释
-    const reason = this.explanationEngine.generateAdjustmentExplanation(
+    const fallbackReason = this.explanationEngine.generateAdjustmentExplanation(
       feedbackType,
       originalWorkout,
       adjustedWorkout,
+    );
+    const aiCoachReason = await this.llmCoach.explainFeedback({
+      userId,
+      fallbackText: fallbackReason,
+      evidence: {
+        feedbackType,
+        subjectiveFatigue: params.subjectiveFatigue,
+        availableTimeMinutes: params.availableTimeMinutes,
+        preferredSport: params.preferredSport,
+        note: params.note,
+        originalWorkout,
+        adjustedWorkout,
+      },
+      ruleResult: {
+        hardSafetyTriggered: false,
+        adjustmentReason: feedbackType,
+        adjustedWorkout,
+      },
+      hardSafetyTriggered: false,
+      painReported: false,
+    });
+    await this.saveAdjustedRecommendation(
+      original,
+      adjustedWorkout,
+      feedbackType,
+      aiCoachReason.text,
+      aiCoachReason,
     );
 
     return {
       adjusted: true,
       originalRecommendationId,
       newRecommendation: adjustedWorkout,
-      reason,
+      reason: aiCoachReason.text,
       decision: {
         hardSafetyTriggered: false,
         adjustmentReason: feedbackType,
@@ -260,12 +314,14 @@ export class TrainingDecisionEngineService {
     state: DailyAthleteState,
     recommendation: WorkoutRecommendation,
     explanation: any,
+    aiCoach: any,
   ): Record<string, any> {
     return {
       userId,
       state,
       recommendation,
       explanation,
+      aiCoach,
       generatedAt: new Date().toISOString(),
       version: '1.1',
     };
@@ -377,10 +433,11 @@ export class TrainingDecisionEngineService {
    * 保存调整后的训练建议
    */
   private async saveAdjustedRecommendation(
-    userId: string,
     original: any,
     adjustedWorkout: WorkoutRecommendation,
     feedbackType: FeedbackType,
+    userFriendlyReason: string,
+    aiCoach: any,
   ) {
     return this.prisma.dailyRecommendation.update({
       where: { id: original.id },
@@ -398,7 +455,7 @@ export class TrainingDecisionEngineService {
         hardSafetyTriggered: feedbackType === 'pain_or_discomfort',
         triggeredRules: [],
         evidence: original.evidence as any,
-        userFriendlyReason: `根据你的反馈调整：${feedbackType}`,
+        userFriendlyReason,
         technicalReason: `Adjusted due to ${feedbackType}`,
         confidence: original.confidence * 0.9,
         status: 'adjusted',
@@ -407,9 +464,22 @@ export class TrainingDecisionEngineService {
           ...original.decisionJson,
           adjustedFrom: original.id,
           adjustmentReason: feedbackType,
+          aiCoach,
           adjustedAt: new Date().toISOString(),
         } as any,
       },
     });
+  }
+
+  private toWorkoutRecommendation(original: any): WorkoutRecommendation {
+    return {
+      sport: original.sport as any,
+      type: original.type as any,
+      title: original.title,
+      durationMinutes: original.durationMinutes,
+      expectedTss: original.expectedTss,
+      intensity: original.intensity as any,
+      structure: original.structure as any,
+    };
   }
 }

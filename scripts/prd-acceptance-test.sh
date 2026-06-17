@@ -114,6 +114,26 @@ await scenario('25.4/25.5 data API', '历史、周报、模型覆盖数据', asy
   };
 });
 
+await scenario('AI Coach P0', 'AI Coach 边界、问答和分析契约', async () => {
+  const today = await request('/api/today');
+  const weekly = await request('/api/weekly-review/latest');
+  const answer = await request('/api/ai-coach/ask', {
+    method: 'POST',
+    body: JSON.stringify({ question: '为什么今天这样安排？' }),
+  });
+  assert(typeof today.explanation?.simple === 'string' && today.explanation.simple.length > 0, 'training explanation missing');
+  assert(typeof weekly.aiCoachSummary === 'string' && weekly.aiCoachSummary.length > 0, 'AI Coach weekly summary missing');
+  assert(weekly.modelCoverage && weekly.recoveryTrend, 'training analysis context missing');
+  assert(typeof answer.answer === 'string' && answer.answer.length > 0, 'AI Coach answer missing');
+  assert(typeof answer.used_llm === 'boolean', 'AI Coach mode missing');
+  assert(typeof answer.safety_filtered === 'boolean', 'AI Coach safety status missing');
+  return {
+    explanation: today.explanation.simple,
+    weeklySummary: weekly.aiCoachSummary,
+    usedLlm: answer.used_llm,
+  };
+});
+
 const failed = results.filter((item) => !item.passed);
 console.log(JSON.stringify({ passed: failed.length === 0, results }, null, 2));
 if (failed.length) process.exit(1);
