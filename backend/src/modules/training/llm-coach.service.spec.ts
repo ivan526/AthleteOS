@@ -13,12 +13,14 @@ describe('LlmCoachService', () => {
     },
     aiCoachAudit: {
       create: auditCreate,
+      findFirst: jest.fn(),
     },
   } as any;
   const service = new LlmCoachService(prisma, new AiCoachGuardrailService());
 
   beforeEach(() => {
     jest.clearAllMocks();
+    prisma.aiCoachAudit.findFirst.mockResolvedValue(null);
   });
 
   it('falls back without calling the LLM when disabled', async () => {
@@ -67,6 +69,36 @@ describe('LlmCoachService', () => {
         safetyFiltered: true,
         fallbackUsed: true,
       }),
+    }));
+  });
+
+  it('returns a cached successful response without calling the provider', async () => {
+    prisma.llmSetting.findUnique.mockResolvedValue({
+      enabled: true,
+      provider: 'volcengine',
+      model: 'test-model',
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'secret',
+    });
+    prisma.aiCoachAudit.findFirst.mockResolvedValue({
+      rawOutput: '缓存解释',
+      finalOutput: '缓存解释',
+      guardrailReasons: [],
+    });
+
+    const result = await service.polishTrainingExplanation({
+      userId: 'user-1',
+      fallbackText: '规则解释',
+      evidence: { capacity: 75 },
+      ruleResult: { workout: 'aerobic' },
+      hardSafetyTriggered: false,
+    });
+
+    expect(result.text).toBe('缓存解释');
+    expect(result.usedLlm).toBe(true);
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+    expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ cacheHit: true }),
     }));
   });
 });

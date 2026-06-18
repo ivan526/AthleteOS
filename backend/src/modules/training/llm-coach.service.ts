@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
+import { createHash } from 'crypto';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { AiCoachGuardrailService } from './ai-coach-guardrail.service';
 
@@ -32,6 +33,8 @@ interface CoachRequest {
 @Injectable()
 export class LlmCoachService {
   private readonly logger = new Logger(LlmCoachService.name);
+  private readonly inFlight = new Map<string, Promise<AiCoachTextResult>>();
+  private readonly cacheTtlMs = 24 * 60 * 60 * 1000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -112,7 +115,13 @@ export class LlmCoachService {
       };
     }
 
-    const compatibleProviders = new Set(['openai-compatible', 'openai', 'deepseek', 'local']);
+    const compatibleProviders = new Set([
+      'openai-compatible',
+      'openai',
+      'deepseek',
+      'volcengine',
+      'local',
+    ]);
     if (!compatibleProviders.has(setting.provider)) {
       return this.auditAndReturn(request, setting, {
         rawOutput: null,
@@ -124,6 +133,54 @@ export class LlmCoachService {
       });
     }
 
+    const requestHash = this.createRequestHash(setting, request);
+    const cached = await this.prisma.aiCoachAudit.findFirst({
+      where: {
+        userId: request.userId,
+        requestHash,
+        fallbackUsed: false,
+        safetyFiltered: false,
+        errorMessage: null,
+        createdAt: { gte: new Date(Date.now() - this.cacheTtlMs) },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (cached) {
+      return this.auditAndReturn(request, setting, {
+        requestHash,
+        rawOutput: cached.rawOutput,
+        finalOutput: cached.finalOutput,
+        safetyFiltered: false,
+        fallbackUsed: false,
+        cacheHit: true,
+        guardrailReasons: (cached.guardrailReasons as string[] | null) ?? [],
+      });
+    }
+
+    const pending = this.inFlight.get(requestHash);
+    if (pending) {
+      return pending;
+    }
+
+    const generation = this.generateAndAudit(setting, request, requestHash);
+    this.inFlight.set(requestHash, generation);
+    try {
+      return await generation;
+    } finally {
+      this.inFlight.delete(requestHash);
+    }
+  }
+
+  private async generateAndAudit(
+    setting: {
+      provider: string;
+      model: string | null;
+      baseUrl: string | null;
+      apiKey: string | null;
+    },
+    request: CoachRequest,
+    requestHash: string,
+  ): Promise<AiCoachTextResult> {
     try {
       const rawOutput = await this.callOpenAiCompatible(setting, request);
       const guarded = this.guardrail.evaluate(rawOutput, {
@@ -133,24 +190,62 @@ export class LlmCoachService {
       });
 
       return this.auditAndReturn(request, setting, {
+        requestHash,
         rawOutput,
         finalOutput: guarded.text,
         safetyFiltered: guarded.filtered,
         fallbackUsed: guarded.filtered,
+        cacheHit: false,
         guardrailReasons: guarded.reasons,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`AI Coach fallback (${request.interactionType}): ${message}`);
       return this.auditAndReturn(request, setting, {
+        requestHash,
         rawOutput: null,
         finalOutput: request.fallbackText,
         safetyFiltered: false,
         fallbackUsed: true,
+        cacheHit: false,
         guardrailReasons: ['llm_error'],
         errorMessage: message,
       });
     }
+  }
+
+  private createRequestHash(
+    setting: { provider: string; model: string | null; baseUrl: string | null },
+    request: CoachRequest,
+  ): string {
+    return createHash('sha256')
+      .update(this.stableStringify({
+        version: 1,
+        provider: setting.provider,
+        model: setting.model,
+        baseUrl: setting.baseUrl,
+        interactionType: request.interactionType,
+        instruction: request.instruction,
+        userQuestion: request.userQuestion,
+        evidence: request.evidence,
+        ruleResult: request.ruleResult,
+        hardSafetyTriggered: request.hardSafetyTriggered ?? false,
+        painReported: request.painReported ?? false,
+      }))
+      .digest('hex');
+  }
+
+  private stableStringify(value: unknown): string {
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => this.stableStringify(item)).join(',')}]`;
+    }
+    if (value && typeof value === 'object') {
+      const entries = Object.entries(value as Record<string, unknown>)
+        .filter(([, item]) => item !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right));
+      return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${this.stableStringify(item)}`).join(',')}}`;
+    }
+    return JSON.stringify(value);
   }
 
   private async callOpenAiCompatible(
@@ -198,7 +293,7 @@ export class LlmCoachService {
         ],
       },
       {
-        timeout: 12_000,
+        timeout: 30_000,
         headers: {
           'Content-Type': 'application/json',
           ...(setting.apiKey ? { Authorization: `Bearer ${setting.apiKey}` } : {}),
@@ -221,6 +316,8 @@ export class LlmCoachService {
       finalOutput: string;
       safetyFiltered: boolean;
       fallbackUsed: boolean;
+      requestHash?: string;
+      cacheHit?: boolean;
       guardrailReasons: string[];
       errorMessage?: string;
     },
@@ -232,6 +329,7 @@ export class LlmCoachService {
           interactionType: request.interactionType,
           provider: setting.provider,
           model: setting.model,
+          requestHash: result.requestHash,
           inputEvidence: {
             ...request.evidence,
             ...(request.userQuestion ? { question: request.userQuestion } : {}),
@@ -242,6 +340,7 @@ export class LlmCoachService {
           guardrailReasons: result.guardrailReasons as any,
           safetyFiltered: result.safetyFiltered,
           fallbackUsed: result.fallbackUsed,
+          cacheHit: result.cacheHit ?? false,
           errorMessage: result.errorMessage,
         },
       });

@@ -37,7 +37,7 @@ def score_from_garmin(summary):
     if not summary:
         return None
 
-    hrv_ms = summary.get("lastNightAvg") or summary.get("lastNight") or summary.get("weeklyAvg")
+    hrv_ms = summary.get("lastNightAvg") or summary.get("lastNight")
     if hrv_ms is None:
         return None
 
@@ -71,6 +71,7 @@ def main():
     password = os.environ.get("GARMIN_PASSWORD")
     mfa_code = os.environ.get("GARMIN_MFA_CODE")
     tokenstore = os.environ.get("GARMIN_TOKENSTORE")
+    auth_domain = os.environ.get("GARMIN_AUTH_DOMAIN", "garmin.com").strip().lower()
     oldest = parse_day(os.environ.get("GARMIN_OLDEST", (date.today() - timedelta(days=30)).isoformat()))
     newest = parse_day(os.environ.get("GARMIN_NEWEST", date.today().isoformat()))
 
@@ -85,7 +86,8 @@ def main():
             return mfa_code
         raise RuntimeError("Garmin 需要 MFA 验证码，请在设置页填写后重试")
 
-    client = Garmin(email, password, prompt_mfa=prompt_mfa)
+    is_cn = auth_domain in {"garmin.cn", "cn", "china"}
+    client = Garmin(email, password, is_cn=is_cn, prompt_mfa=prompt_mfa)
     try:
         client.login(tokenstore)
     except Exception as exc:
@@ -93,6 +95,7 @@ def main():
 
     records = []
     fetched_days = 0
+    response_days = 0
     for day in daterange(oldest, newest):
         try:
             payload = client.get_hrv_data(day.isoformat())
@@ -105,7 +108,9 @@ def main():
             continue
 
         summary = (payload or {}).get("hrvSummary") or {}
-        hrv_ms = summary.get("lastNightAvg") or summary.get("lastNight") or summary.get("weeklyAvg")
+        if payload:
+            response_days += 1
+        hrv_ms = summary.get("lastNightAvg") or summary.get("lastNight")
         hrv_score = score_from_garmin(summary)
         if hrv_score is None:
             continue
@@ -123,6 +128,7 @@ def main():
     print(json.dumps({
         "success": True,
         "fetchedDays": fetched_days,
+        "responseDays": response_days,
         "hrvDays": len([record for record in records if record.get("hrvScore") is not None]),
         "records": records,
     }, ensure_ascii=False))

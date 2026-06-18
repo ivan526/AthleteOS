@@ -17,6 +17,7 @@ export interface GarminHrvRecord {
 export interface GarminHrvResult {
   success: boolean;
   fetchedDays: number;
+  responseDays: number;
   hrvDays: number;
   records: GarminHrvRecord[];
   error?: string;
@@ -33,6 +34,7 @@ export class GarminApiService {
     oldest: Date;
     newest: Date;
     tokenStore: string;
+    authDomain: string;
     mfaCode?: string;
   }): Promise<GarminHrvResult> {
     const scriptPath = this.resolveScriptPath();
@@ -44,6 +46,7 @@ export class GarminApiService {
       GARMIN_OLDEST: this.toDateId(params.oldest),
       GARMIN_NEWEST: this.toDateId(params.newest),
       GARMIN_TOKENSTORE: params.tokenStore,
+      GARMIN_AUTH_DOMAIN: params.authDomain,
     };
 
     if (params.mfaCode) {

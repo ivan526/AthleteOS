@@ -191,6 +191,7 @@ export interface UserSettings {
   has_credentials: boolean
   last_sync_at: string | null
   garmin_email: string
+  garmin_auth_domain: string
   has_garmin_credentials: boolean
   garmin_last_sync_at: string | null
   garmin_sync_status: string
@@ -217,6 +218,7 @@ export function updateSettings(data: {
   intervals_athlete_id?: string
   garmin_email?: string
   garmin_password?: string
+  garmin_auth_domain?: string
   llm_provider?: string
   llm_model?: string
   llm_base_url?: string

@@ -43,11 +43,18 @@ const formatDateTime = (value?: string | null) => {
   return new Date(value).toLocaleString('zh-CN')
 }
 
+const llmProviderBaseUrls: Record<string, string> = {
+  openai: 'https://api.openai.com/v1',
+  deepseek: 'https://api.deepseek.com',
+  volcengine: 'https://ark.cn-beijing.volces.com/api/v3',
+}
+
 const defaultSettings: UserSettings = {
   intervals_athlete_id: '',
   has_credentials: false,
   last_sync_at: null,
   garmin_email: '',
+  garmin_auth_domain: 'garmin.com',
   has_garmin_credentials: false,
   garmin_last_sync_at: null,
   garmin_sync_status: 'not_connected',
@@ -75,6 +82,7 @@ const Settings = () => {
   const [savingLlm, setSavingLlm] = useState(false)
   const [garminEmail, setGarminEmail] = useState('')
   const [garminPassword, setGarminPassword] = useState('')
+  const [garminAuthDomain, setGarminAuthDomain] = useState('garmin.com')
   const [garminMfaCode, setGarminMfaCode] = useState('')
   const [llmProvider, setLlmProvider] = useState('openai-compatible')
   const [llmModel, setLlmModel] = useState('')
@@ -95,6 +103,7 @@ const Settings = () => {
     })
     setSettings(settingsData)
     setGarminEmail(settingsData.garmin_email || '')
+    setGarminAuthDomain(settingsData.garmin_auth_domain || 'garmin.com')
     setLlmProvider(settingsData.llm_provider || 'openai-compatible')
     setLlmModel(settingsData.llm_model || '')
     setLlmBaseUrl(settingsData.llm_base_url || '')
@@ -148,9 +157,11 @@ const Settings = () => {
       const updated = await updateSettings({
         garmin_email: garminEmail.trim(),
         garmin_password: garminPassword || undefined,
+        garmin_auth_domain: garminAuthDomain,
       })
       setSettings(updated)
       setGarminEmail(updated.garmin_email || '')
+      setGarminAuthDomain(updated.garmin_auth_domain || 'garmin.com')
       setGarminPassword('')
     } catch (err: any) {
       console.error('保存 Garmin 失败', err)
@@ -179,6 +190,18 @@ const Settings = () => {
   }
 
   const handleSaveLlm = async () => {
+    if (llmEnabled && !llmBaseUrl.trim()) {
+      alert('启用 AI Coach 前请填写 Base URL，或选择带预设地址的 Provider。')
+      return
+    }
+    if (llmEnabled && !llmModel.trim()) {
+      alert('启用 AI Coach 前请填写模型名称。')
+      return
+    }
+    if (llmEnabled && !settings?.has_llm_api_key && !llmApiKey) {
+      alert('启用 AI Coach 前请填写 API Key。')
+      return
+    }
     try {
       setSavingLlm(true)
       const updated = await updateSettings({
@@ -279,6 +302,17 @@ const Settings = () => {
 
           <div className="space-y-3">
             <label className="block">
+              <span className="text-sm text-text-secondary">Garmin 服务区域</span>
+              <select
+                value={garminAuthDomain}
+                onChange={(event) => setGarminAuthDomain(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-text-primary outline-none focus:border-primary"
+              >
+                <option value="garmin.cn">中国区（garmin.cn）</option>
+                <option value="garmin.com">国际区（garmin.com）</option>
+              </select>
+            </label>
+            <label className="block">
               <span className="text-sm text-text-secondary">Garmin 邮箱</span>
               <input
                 value={garminEmail}
@@ -368,10 +402,18 @@ const Settings = () => {
               <span className="text-sm text-text-secondary">Provider</span>
               <select
                 value={llmProvider}
-                onChange={(event) => setLlmProvider(event.target.value)}
+                onChange={(event) => {
+                  const provider = event.target.value
+                  const oldPreset = llmProviderBaseUrls[llmProvider]
+                  setLlmProvider(provider)
+                  if (!llmBaseUrl.trim() || llmBaseUrl === oldPreset) {
+                    setLlmBaseUrl(llmProviderBaseUrls[provider] || '')
+                  }
+                }}
                 className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-text-primary outline-none focus:border-primary"
               >
                 <option value="openai-compatible">OpenAI-compatible</option>
+                <option value="volcengine">豆包 / 火山方舟</option>
                 <option value="openai">OpenAI</option>
                 <option value="deepseek">DeepSeek</option>
                 <option value="local">Local / Self-hosted</option>
@@ -412,7 +454,7 @@ const Settings = () => {
 
           <button
             onClick={handleSaveLlm}
-            disabled={savingLlm || (llmEnabled && (!llmModel.trim() || !llmBaseUrl.trim()))}
+            disabled={savingLlm}
             className="mt-4 w-full btn-primary disabled:opacity-50"
           >
             {savingLlm ? '保存中...' : '保存 LLM 配置'}

@@ -217,7 +217,8 @@ export class SyncService {
         password: connectedAccount.apiKey,
         oldest,
         newest,
-        tokenStore: this.getGarminTokenStore(userId),
+        tokenStore: this.getGarminTokenStore(userId, connectedAccount.authDomain),
+        authDomain: connectedAccount.authDomain ?? 'garmin.com',
         mfaCode,
       });
 
@@ -243,7 +244,7 @@ export class SyncService {
         data: {
           lastSyncAt,
           syncStatus: 'success',
-          syncMessage: `同步完成：获取 ${result.fetchedDays} 天，补充 ${syncedHrvDays} 天 HRV`,
+          syncMessage: `同步完成：请求 ${result.fetchedDays} 天，返回 ${result.responseDays} 天，补充 ${syncedHrvDays} 天 HRV`,
         },
       });
 
@@ -670,6 +671,7 @@ export class SyncService {
       has_credentials: Boolean(connectedAccount?.apiKey && connectedAccount.apiKey !== 'demo'),
       last_sync_at: connectedAccount?.lastSyncAt ?? null,
       garmin_email: garminAccount?.athleteId ?? '',
+      garmin_auth_domain: garminAccount?.authDomain ?? 'garmin.com',
       has_garmin_credentials: Boolean(garminAccount?.apiKey && garminAccount.apiKey !== 'demo'),
       garmin_last_sync_at: garminAccount?.lastSyncAt ?? null,
       garmin_sync_status: garminAccount?.syncStatus ?? 'not_connected',
@@ -695,6 +697,7 @@ export class SyncService {
       intervals_athlete_id?: string;
       garmin_email?: string;
       garmin_password?: string;
+      garmin_auth_domain?: string;
       llm_provider?: string;
       llm_model?: string;
       llm_base_url?: string;
@@ -762,7 +765,8 @@ export class SyncService {
       });
     }
 
-    if (data.garmin_email || data.garmin_password) {
+    if (data.garmin_email || data.garmin_password || data.garmin_auth_domain) {
+      const garminAuthDomain = data.garmin_auth_domain === 'garmin.cn' ? 'garmin.cn' : 'garmin.com';
       await this.prisma.connectedAccount.upsert({
         where: {
           userId_provider: {
@@ -773,6 +777,7 @@ export class SyncService {
         update: {
           athleteId: data.garmin_email ?? existingGarminAccount?.athleteId ?? '',
           apiKey: data.garmin_password ?? existingGarminAccount?.apiKey ?? '',
+          authDomain: garminAuthDomain,
           syncStatus: 'connected',
           syncMessage: '已保存 Garmin Connect 凭证',
         },
@@ -781,6 +786,7 @@ export class SyncService {
           provider: 'garmin.connect',
           athleteId: data.garmin_email ?? '',
           apiKey: data.garmin_password ?? '',
+          authDomain: garminAuthDomain,
           syncStatus: 'connected',
           syncMessage: '已保存 Garmin Connect 凭证',
         },
@@ -818,7 +824,8 @@ export class SyncService {
     return this.getSettings(userId);
   }
 
-  private getGarminTokenStore(userId: string): string {
-    return resolve(process.cwd(), '.cache', 'garmin', userId);
+  private getGarminTokenStore(userId: string, authDomain?: string | null): string {
+    const region = authDomain === 'garmin.cn' ? 'cn' : 'global';
+    return resolve(process.cwd(), '.cache', 'garmin', region, userId);
   }
 }

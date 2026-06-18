@@ -52,6 +52,7 @@ model AiCoachAudit {
   interactionType     String                // training_explanation, feedback_explanation, training_analysis, question
   provider            String?
   model               String?
+  requestHash         String?
   inputEvidence       Json
   ruleResult          Json?
   rawOutput            String?
@@ -59,12 +60,14 @@ model AiCoachAudit {
   guardrailReasons    Json?
   safetyFiltered      Boolean               @default(false)
   fallbackUsed        Boolean               @default(false)
+  cacheHit            Boolean               @default(false)
   errorMessage        String?
   createdAt           DateTime              @default(now())
 
   user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+  @@index([userId, requestHash, createdAt])
   @@index([interactionType, createdAt])
 }
 
@@ -92,6 +95,7 @@ model ConnectedAccount {
   provider            String                @default("intervals.icu")
   athleteId           String                // Intervals.icu athlete ID
   apiKey              String                // Intervals.icu API key
+  authDomain          String?               // Provider auth region/domain, e.g. garmin.cn
   lastSyncAt          DateTime?
   syncStatus          String                @default("idle") // idle, syncing, success, failed
   syncMessage         String?
