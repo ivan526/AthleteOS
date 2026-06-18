@@ -154,6 +154,7 @@ export class WorkoutGeneratorService {
     preferredSport: Sport = 'running',
     availableTimeMinutes: number = 60,
     allowedTypes?: WorkoutType[],
+    date: Date = new Date(),
   ): WorkoutRecommendation {
     const dayType = this.getDayTypeFromCapacity(state.trainingCapacity.score);
 
@@ -167,6 +168,7 @@ export class WorkoutGeneratorService {
       allowedIntensities,
       allowedTypes,
       state.dataLevel,
+      date.toISOString().slice(0, 10),
     );
 
     // 计算合适的时长和TSS
@@ -234,6 +236,7 @@ export class WorkoutGeneratorService {
     allowedIntensities: Intensity[],
     allowedTypes?: WorkoutType[],
     dataLevel?: string,
+    dateId?: string,
   ): WorkoutType {
     // 恢复日
     if (dayType === 'recovery') {
@@ -258,8 +261,9 @@ export class WorkoutGeneratorService {
       }
 
       if (allowedIntensities.includes('moderate')) {
-        if (sport === 'running') return Math.random() > 0.5 ? 'steady_run' : 'tempo_run';
-        if (sport === 'cycling') return Math.random() > 0.5 ? 'endurance_ride' : 'tempo_ride';
+        const useFirstVariant = this.selectDailyVariant(`${dateId ?? ''}:${sport}`);
+        if (sport === 'running') return useFirstVariant ? 'steady_run' : 'tempo_run';
+        if (sport === 'cycling') return useFirstVariant ? 'endurance_ride' : 'tempo_ride';
       }
       return sport === 'running' ? 'easy_run' : 'easy_ride';
     }
@@ -274,6 +278,14 @@ export class WorkoutGeneratorService {
     if (sport === 'running') return 'easy_run';
     if (sport === 'cycling') return 'easy_ride';
     return 'mobility';
+  }
+
+  private selectDailyVariant(seed: string): boolean {
+    let hash = 0;
+    for (const character of seed) {
+      hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+    }
+    return hash % 2 === 0;
   }
 
   /**

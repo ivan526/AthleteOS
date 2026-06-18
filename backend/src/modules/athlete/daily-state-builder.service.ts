@@ -231,11 +231,12 @@ export class DailyStateBuilderService {
 
     let overall: DataQualityDetail['overall'];
 
-    if (historyDays >= 90 && activityCount >= 60 && tssCount / activityCount >= 0.9) {
+    const tssCoverage = activityCount ? tssCount / activityCount : 0;
+    if (historyDays >= 90 && activityCount >= 12 && tssCoverage >= 0.8) {
       overall = 'high';
-    } else if (historyDays >= 42 && activityCount >= 30 && tssCount / activityCount >= 0.7) {
+    } else if (historyDays >= 42 && activityCount >= 6 && tssCoverage >= 0.6) {
       overall = 'medium';
-    } else if (historyDays >= 14 && activityCount >= 10) {
+    } else if (historyDays >= 14 && activityCount >= 2) {
       overall = 'low';
     } else {
       overall = 'insufficient';
@@ -351,10 +352,10 @@ export class DailyStateBuilderService {
    * 计算整体置信度
    */
   private calculateOverallConfidence(confidences: number[]): number {
-    // 去掉最低分，取平均
-    const sorted = [...confidences].sort((a, b) => a - b);
-    const filtered = sorted.slice(1); // 去掉最低分
-    const average = filtered.reduce((sum, val) => sum + val, 0) / filtered.length;
+    // 不适用的子模型（例如近 7 天训练不足 3 次时的 Monotony）不应拖垮整体建议。
+    const available = confidences.filter(confidence => confidence > 0);
+    if (available.length === 0) return 0;
+    const average = available.reduce((sum, value) => sum + value, 0) / available.length;
     return Number(average.toFixed(2));
   }
 

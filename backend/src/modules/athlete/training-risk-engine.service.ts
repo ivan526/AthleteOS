@@ -25,13 +25,13 @@ export class TrainingRiskEngineService {
 
     let riskScore = 0;
     const factors: TrainingRiskResult['mainFactors'] = [];
-    let confidence = 1.0;
+    let confidence = 0;
 
     // ACWR风险权重 (30%)
     if (acwr && acwr.acwr !== null) {
       const acwrRisk = this.getAcwrRisk(acwr.level);
       riskScore += acwrRisk * 0.3;
-      confidence *= acwr.confidence;
+      confidence += 0.3 * acwr.confidence;
 
       if (acwrRisk > 0.3) {
         factors.push({
@@ -41,14 +41,14 @@ export class TrainingRiskEngineService {
         });
       }
     } else {
-      confidence *= 0.7; // 缺少ACWR数据，置信度降低
+      confidence += 0.3 * 0.3;
     }
 
     // Monotony风险权重 (20%)
     if (monotony && monotony.monotony !== null) {
       const monotonyRisk = this.getMonotonyRisk(monotony.level);
       riskScore += monotonyRisk * 0.2;
-      confidence *= monotony.confidence;
+      confidence += 0.2 * monotony.confidence;
 
       if (monotonyRisk > 0.3) {
         factors.push({
@@ -58,11 +58,12 @@ export class TrainingRiskEngineService {
         });
       }
     } else {
-      confidence *= 0.8; // 缺少Monotony数据，置信度降低
+      confidence += 0.2 * 0.5;
     }
 
     // Form风险权重 (20%) - 数值越低越疲劳
     if (form !== undefined && form !== null) {
+      confidence += 0.2;
       const formRisk = this.getFormRisk(form);
       riskScore += formRisk * 0.2;
 
@@ -74,11 +75,12 @@ export class TrainingRiskEngineService {
         });
       }
     } else {
-      confidence *= 0.9;
+      confidence += 0.2 * 0.4;
     }
 
     // 睡眠风险权重 (15%)
     if (sleepScore !== undefined && sleepScore !== null) {
+      confidence += 0.15;
       const sleepRisk = this.getSleepRisk(sleepScore);
       riskScore += sleepRisk * 0.15;
 
@@ -89,10 +91,13 @@ export class TrainingRiskEngineService {
           message: '近期睡眠质量不佳',
         });
       }
+    } else {
+      confidence += 0.15 * 0.3;
     }
 
     // HRV风险权重 (10%)
     if (hrvScore !== undefined && hrvScore !== null) {
+      confidence += 0.1;
       const hrvRisk = this.getHrvRisk(hrvScore);
       riskScore += hrvRisk * 0.1;
 
@@ -103,7 +108,11 @@ export class TrainingRiskEngineService {
           message: '心率变异性较低，身体恢复不足',
         });
       }
+    } else {
+      confidence += 0.1 * 0.3;
     }
+
+    confidence += 0.05;
 
     // 连续高强度训练风险 (5%)
     if (consecutiveHardDays >= 3) {

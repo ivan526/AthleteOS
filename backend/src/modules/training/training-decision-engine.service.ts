@@ -50,6 +50,7 @@ export class TrainingDecisionEngineService {
       preferredSport as any,
       availableTimeMinutes,
       allowedTypes as any,
+      date,
     );
 
     // 生成解释

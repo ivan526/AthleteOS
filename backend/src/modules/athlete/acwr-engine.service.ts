@@ -46,9 +46,8 @@ export class AcwrEngineService {
       };
     }
 
-    // 计算最早和最晚活动日期
-    const dates = last28Days.map(a => a.startTime);
-    const earliestDate = new Date(Math.min(...dates.map(d => d.getTime())));
+    // 账户历史中的无训练日是有效的 0 负荷，不能用最近一次训练日期判断数据覆盖。
+    const earliestDate = new Date(Math.min(...activities.map(activity => activity.startTime.getTime())));
     const historyDays = Math.ceil((referenceDate.getTime() - earliestDate.getTime()) / (1000 * 60 * 60 * 24));
 
     // 历史天数不足28天的情况
@@ -87,11 +86,12 @@ export class AcwrEngineService {
     const level = this.getAcwrLevel(acwr);
 
     // 数据质量评估
-    const tssCount28d = last28Days.filter(a => a.tss != null).length;
+    const tssCount28d = last28Days.filter(activity => activity.tss != null).length;
+    const tssCoverage = last28Days.length ? tssCount28d / last28Days.length : 0;
     const dataQuality: DataQuality =
-      tssCount28d >= 20 ? 'high' : tssCount28d >= 10 ? 'medium' : 'low';
+      tssCoverage >= 0.9 ? 'high' : tssCoverage >= 0.7 ? 'medium' : 'low';
 
-    const confidence = dataQuality === 'high' ? 0.8 : dataQuality === 'medium' ? 0.6 : 0.4;
+    const confidence = dataQuality === 'high' ? 0.85 : dataQuality === 'medium' ? 0.7 : 0.5;
 
     return {
       acwr,

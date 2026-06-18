@@ -23,6 +23,7 @@ export class SettingsController {
       intervals_athlete_id?: string;
       garmin_email?: string;
       garmin_password?: string;
+      garmin_auth_domain?: string;
       llm_provider?: string;
       llm_model?: string;
       llm_base_url?: string;

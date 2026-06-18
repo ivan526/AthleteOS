@@ -53,19 +53,23 @@ export class TrainingCapacityEngineService {
     const subscores: Record<string, number> = {};
     let totalScore = 0;
     let totalWeight = 0;
-    let confidence = 1.0;
+    let confidenceScore = 0;
+    const addConfidence = (weight: number, quality: number) => {
+      confidenceScore += weight * quality;
+    };
 
     // 睡眠评分
     if (sleepScore !== undefined && sleepScore !== null) {
       subscores.sleep = sleepScore;
       totalScore += sleepScore * this.WEIGHTS.sleep;
       totalWeight += this.WEIGHTS.sleep;
+      addConfidence(this.WEIGHTS.sleep, 1);
     } else {
       // 缺少数据时使用默认值，置信度降低
       subscores.sleep = 70;
       totalScore += 70 * this.WEIGHTS.sleep;
       totalWeight += this.WEIGHTS.sleep;
-      confidence *= 0.8;
+      addConfidence(this.WEIGHTS.sleep, 0.4);
     }
 
     // HRV评分
@@ -73,6 +77,9 @@ export class TrainingCapacityEngineService {
       subscores.hrv = hrvScore;
       totalScore += hrvScore * this.WEIGHTS.hrv;
       totalWeight += this.WEIGHTS.hrv;
+      addConfidence(this.WEIGHTS.hrv, 1);
+    } else {
+      addConfidence(this.WEIGHTS.hrv, 0);
     }
 
     // Form评分 (转换为0-100)
@@ -81,11 +88,12 @@ export class TrainingCapacityEngineService {
       subscores.form = formScore;
       totalScore += formScore * this.WEIGHTS.form;
       totalWeight += this.WEIGHTS.form;
+      addConfidence(this.WEIGHTS.form, 1);
     } else {
       subscores.form = 65;
       totalScore += 65 * this.WEIGHTS.form;
       totalWeight += this.WEIGHTS.form;
-      confidence *= 0.9;
+      addConfidence(this.WEIGHTS.form, 0.5);
     }
 
     // ACWR评分 (转换为0-100)
@@ -94,12 +102,12 @@ export class TrainingCapacityEngineService {
       subscores.acwr = acwrScore;
       totalScore += acwrScore * this.WEIGHTS.acwr;
       totalWeight += this.WEIGHTS.acwr;
-      confidence *= acwr.confidence;
+      addConfidence(this.WEIGHTS.acwr, acwr.confidence);
     } else {
       subscores.acwr = 70;
       totalScore += 70 * this.WEIGHTS.acwr;
       totalWeight += this.WEIGHTS.acwr;
-      confidence *= 0.9;
+      addConfidence(this.WEIGHTS.acwr, 0.3);
     }
 
     // Monotony评分 (转换为0-100)
@@ -108,12 +116,12 @@ export class TrainingCapacityEngineService {
       subscores.monotony = monotonyScore;
       totalScore += monotonyScore * this.WEIGHTS.monotony;
       totalWeight += this.WEIGHTS.monotony;
-      confidence *= monotony.confidence;
+      addConfidence(this.WEIGHTS.monotony, monotony.confidence);
     } else {
       subscores.monotony = 75;
       totalScore += 75 * this.WEIGHTS.monotony;
       totalWeight += this.WEIGHTS.monotony;
-      confidence *= 0.95;
+      addConfidence(this.WEIGHTS.monotony, 0.5);
     }
 
     // 训练完成率
@@ -121,23 +129,27 @@ export class TrainingCapacityEngineService {
     subscores.adherence = adherenceScore;
     totalScore += adherenceScore * this.WEIGHTS.adherence;
     totalWeight += this.WEIGHTS.adherence;
+    addConfidence(this.WEIGHTS.adherence, params.adherence == null ? 0.4 : 1);
 
     // 主观疲劳 (转换为0-100，1=100分, 10=0分)
     const fatigueScore = 100 - (subjectiveFatigue - 1) * 10;
     subscores.subjectiveFatigue = fatigueScore;
     totalScore += fatigueScore * this.WEIGHTS.subjectiveFatigue;
     totalWeight += this.WEIGHTS.subjectiveFatigue;
+    addConfidence(this.WEIGHTS.subjectiveFatigue, params.subjectiveFatigue == null ? 0.4 : 1);
 
     // 恢复趋势
     subscores.recoveryTrend = recoveryTrend;
     totalScore += recoveryTrend * this.WEIGHTS.recoveryTrend;
     totalWeight += this.WEIGHTS.recoveryTrend;
+    addConfidence(this.WEIGHTS.recoveryTrend, params.recoveryTrend == null ? 0.5 : 0.8);
 
     // 计算最终得分 (0-100)
     let finalScore = Math.round(totalScore / totalWeight);
     finalScore = Math.max(0, Math.min(100, finalScore));
 
     // 根据数据等级调整置信度
+    let confidence = confidenceScore;
     if (dataLevel === 'D') confidence *= 0.5;
     else if (dataLevel === 'C') confidence *= 0.7;
     else if (dataLevel === 'B') confidence *= 0.9;
