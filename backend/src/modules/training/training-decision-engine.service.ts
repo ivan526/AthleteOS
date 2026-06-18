@@ -343,6 +343,13 @@ export class TrainingDecisionEngineService {
    */
   private async saveDecision(userId: string, date: Date, decision: TrainingDecision) {
     const dateOnly = new Date(date.toISOString().split('T')[0]);
+    const existing = await this.prisma.dailyRecommendation.findUnique({
+      where: { userId_date: { userId, date: dateOnly } },
+    });
+
+    if (existing && ['adjusted', 'completed', 'skipped'].includes(existing.status)) {
+      return;
+    }
 
     await this.prisma.dailyRecommendation.upsert({
       where: {
@@ -415,17 +422,18 @@ export class TrainingDecisionEngineService {
     feedbackType: FeedbackType,
     params: any,
   ) {
-    await this.prisma.userFeedback.create({
+    return this.prisma.userFeedback.create({
       data: {
         userId,
         recommendationId,
         feedbackType,
         subjectiveFatigue: params.subjectiveFatigue,
-        pain: params.pain || false,
+        pain: feedbackType === 'pain_or_discomfort' || params.pain || false,
         painArea: params.painArea,
         availableTimeMinutes: params.availableTimeMinutes,
         preferredSport: params.preferredSport,
         note: params.note,
+        adjustedRecommendationId: recommendationId,
       },
     });
   }
@@ -459,7 +467,11 @@ export class TrainingDecisionEngineService {
         userFriendlyReason,
         technicalReason: `Adjusted due to ${feedbackType}`,
         confidence: original.confidence * 0.9,
-        status: 'adjusted',
+        status: feedbackType === 'completed_as_planned'
+          ? 'completed'
+          : feedbackType === 'skip_today'
+            ? 'skipped'
+            : 'adjusted',
         originalRecommendationId: original.originalRecommendationId ?? original.id,
         decisionJson: {
           ...original.decisionJson,

@@ -86,6 +86,7 @@ export interface FeedbackRequest {
   available_time_minutes?: number
   preferred_sport?: string
   note?: string
+  pain_area?: string
 }
 
 export interface AdjustedRecommendation {
@@ -160,6 +161,30 @@ export async function submitFeedback(data: FeedbackRequest): Promise<FeedbackRes
     method: 'POST',
     body: JSON.stringify(data),
   })
+}
+
+export interface FeedbackHistoryItem {
+  id: string
+  created_at: string
+  date: string
+  feedback_type: string
+  subjective_fatigue: number | null
+  pain: boolean
+  pain_area: string | null
+  available_time_minutes: number | null
+  preferred_sport: string | null
+  note: string | null
+  recommendation: {
+    title: string
+    type: string
+    duration_minutes: number
+    expected_tss: number
+    status: string
+  }
+}
+
+export function getFeedbackHistory(limit: number = 20): Promise<FeedbackHistoryItem[]> {
+  return request<FeedbackHistoryItem[]>(`/feedback?limit=${limit}`)
 }
 
 /**
