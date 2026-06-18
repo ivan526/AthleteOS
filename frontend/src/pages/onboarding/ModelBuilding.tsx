@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Check, Clock, Info } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { getModelDataCoverage, type ModelDataCoverage } from '../../lib/api'
 
 const ModelBuilding = () => {
   const navigate = useNavigate()
@@ -13,30 +14,36 @@ const ModelBuilding = () => {
     wellness: 'pending',
   })
   const [syncCompleted, setSyncCompleted] = useState(false)
+  const [coverage, setCoverage] = useState<ModelDataCoverage | null>(null)
 
   useEffect(() => {
-    // 模拟同步过程
-    const interval = setInterval(() => {
-      setSyncProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval)
-          setSyncCompleted(true)
-          return 100
-        }
-        const newProgress = prev + 10
-
-        // 更新各个同步项的状态
-        if (newProgress >= 20) setSyncStatus(s => ({ ...s, activities: 'completed' }))
-        if (newProgress >= 40) setSyncStatus(s => ({ ...s, metrics: 'completed' }))
-        if (newProgress >= 60) setSyncStatus(s => ({ ...s, fitness: 'completed' }))
-        if (newProgress >= 80) setSyncStatus(s => ({ ...s, performance: 'completed' }))
-        if (newProgress >= 90) setSyncStatus(s => ({ ...s, wellness: 'completed' }))
-
-        return newProgress
+    getModelDataCoverage()
+      .then((result) => {
+        const available = new Map(result.available.map((item) => [item.key, item.count]))
+        const hasActivities = (available.get('activities') ?? 0) > 0
+        const hasMetrics = (available.get('ctl_atl_form') ?? 0) > 0
+        const hasWellness = (available.get('sleep') ?? 0) > 0 || (available.get('hrv') ?? 0) > 0
+        setCoverage(result)
+        setSyncStatus({
+          activities: hasActivities ? 'completed' : 'failed',
+          metrics: hasMetrics ? 'completed' : 'failed',
+          fitness: hasMetrics ? 'completed' : 'failed',
+          performance: hasActivities ? 'completed' : 'failed',
+          wellness: hasWellness ? 'completed' : 'failed',
+        })
+        setSyncProgress(100)
+        setSyncCompleted(true)
       })
-    }, 500)
-
-    return () => clearInterval(interval)
+      .catch(() => {
+        setSyncStatus({
+          activities: 'failed',
+          metrics: 'failed',
+          fitness: 'failed',
+          performance: 'failed',
+          wellness: 'failed',
+        })
+        setSyncCompleted(true)
+      })
   }, [])
 
   const handleEnter = () => {
@@ -64,6 +71,8 @@ const ModelBuilding = () => {
         return '同步中...'
       case 'pending':
         return '等待中'
+      case 'failed':
+        return '暂无数据'
       default:
         return '等待中'
     }
@@ -91,7 +100,7 @@ const ModelBuilding = () => {
           </div>
           <h1 className="text-2xl font-bold text-text-primary mb-2">建立运动员模型</h1>
           <p className="text-text-secondary max-w-sm mx-auto">
-            正在通过 Intervals.icu API 同步你的训练数据
+            正在汇总 Intervals.icu 与已配置补充数据源
           </p>
         </div>
 
@@ -108,7 +117,7 @@ const ModelBuilding = () => {
 
         {/* 同步状态 */}
         <div className="card mb-6">
-          <h3 className="text-lg font-semibold text-text-primary mb-4">同步状态</h3>
+          <h3 className="text-lg font-semibold text-text-primary mb-4">模型数据状态</h3>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -152,7 +161,9 @@ const ModelBuilding = () => {
                 <span className="text-text-primary">睡眠 / HRV</span>
               </div>
               <span className={`text-sm ${getStatusColor(syncStatus.wellness)}`}>
-                {syncStatus.wellness === 'completed' ? '暂未接入' : getStatusText(syncStatus.wellness)}
+                {syncStatus.wellness === 'completed'
+                  ? `睡眠 ${coverage?.available.find((item) => item.key === 'sleep')?.count ?? 0} 天 · HRV ${coverage?.available.find((item) => item.key === 'hrv')?.count ?? 0} 天`
+                  : getStatusText(syncStatus.wellness)}
               </span>
             </div>
           </div>
@@ -165,15 +176,15 @@ const ModelBuilding = () => {
               <h3 className="text-lg font-semibold text-text-primary mb-3">数据充足度</h3>
               <div className="flex items-center gap-4 mb-3">
                 <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="text-2xl font-bold text-primary">C</span>
+                  <span className="text-2xl font-bold text-primary">{coverage?.dataLevel ?? '-'}</span>
                 </div>
                 <div>
-                  <p className="text-xl font-semibold text-text-primary">Level C</p>
-                  <p className="text-sm text-text-secondary">已同步 28 天训练数据</p>
+                  <p className="text-xl font-semibold text-text-primary">Level {coverage?.dataLevel ?? '-'}</p>
+                  <p className="text-sm text-text-secondary">已覆盖 {coverage?.historyDays ?? 0} 天训练历史</p>
                 </div>
               </div>
               <p className="text-sm text-text-secondary">
-                当前建议会偏保守，随着数据积累，判断会更准确。
+                {coverage?.confidenceNote ?? '模型会根据当前可用数据调整建议可信度。'}
               </p>
             </div>
 

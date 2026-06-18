@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react'
 import { ArrowLeft, AlertTriangle } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { getTodayData, type TodayResponse } from '../lib/api'
+import {
+  getModelDataCoverage,
+  getTodayData,
+  type ModelDataCoverage,
+  type TodayResponse,
+} from '../lib/api'
 
 const DecisionDetail = () => {
   const [data, setData] = useState<TodayResponse | null>(null)
+  const [coverage, setCoverage] = useState<ModelDataCoverage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -16,8 +22,12 @@ const DecisionDetail = () => {
     try {
       setLoading(true)
       setError(null)
-      const result = await getTodayData()
-      setData(result)
+      const [todayResult, coverageResult] = await Promise.all([
+        getTodayData(),
+        getModelDataCoverage(),
+      ])
+      setData(todayResult)
+      setCoverage(coverageResult)
     } catch (err: any) {
       setError(err.message || '加载失败，请稍后重试')
     } finally {
@@ -83,6 +93,9 @@ const DecisionDetail = () => {
   }
 
   const confidence = data.explanation.technical.confidence || 0
+  const coverageByKey = new Map(coverage?.available.map((item) => [item.key, item]) ?? [])
+  const sleepDays = coverageByKey.get('sleep')?.count ?? 0
+  const hrvDays = coverageByKey.get('hrv')?.count ?? 0
   const confidencePercent = Math.round(confidence * 100)
   const getConfidenceLevel = (percent: number) => {
     if (percent >= 80) return '很高'
@@ -154,11 +167,11 @@ const DecisionDetail = () => {
           </div>
           <div className="p-3 bg-background-weak rounded-lg">
             <p className="text-xs text-text-secondary mb-1">睡眠评分</p>
-            <p className="text-lg font-semibold text-text-primary">{data.explanation.technical.sleep_score || '暂未接入'}</p>
+            <p className="text-lg font-semibold text-text-primary">{data.explanation.technical.sleep_score ?? '今日无数据'}</p>
           </div>
           <div className="p-3 bg-background-weak rounded-lg">
             <p className="text-xs text-text-secondary mb-1">HRV评分</p>
-            <p className="text-lg font-semibold text-text-primary">{data.explanation.technical.hrv_score || '暂未接入'}</p>
+            <p className="text-lg font-semibold text-text-primary">{data.explanation.technical.hrv_score ?? '今日无数据'}</p>
           </div>
           <div className="p-3 bg-background-weak rounded-lg">
             <p className="text-xs text-text-secondary mb-1">训练风险</p>
@@ -175,19 +188,27 @@ const DecisionDetail = () => {
         <div className="p-3 bg-background-weak rounded-lg mb-3">
           <div className="flex items-center justify-between mb-2">
             <span className="font-medium text-text-primary">数据质量等级</span>
-            <span className="tag">Level B</span>
+            <span className="tag">Level {coverage?.dataLevel ?? '-'}</span>
           </div>
-          <p className="text-sm text-text-secondary mb-2">已同步 56 天训练数据</p>
-          <p className="text-sm text-text-secondary">数据基本可用，部分恢复数据存在缺失。</p>
+          <p className="text-sm text-text-secondary mb-2">
+            已覆盖 {coverage?.historyDays ?? 0} 天训练历史
+          </p>
+          <p className="text-sm text-text-secondary">
+            {coverage?.confidenceNote ?? '正在读取模型数据覆盖情况。'}
+          </p>
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm text-text-secondary">训练记录</span>
-            <span className="text-sm text-status-success">已完成</span>
+            <span className="text-sm text-status-success">
+              已接入 {coverageByKey.get('activities')?.count ?? 0} 条
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-text-secondary">TSS / CTL / ATL</span>
-            <span className="text-sm text-status-success">已完成</span>
+            <span className="text-sm text-status-success">
+              已接入 {coverageByKey.get('ctl_atl_form')?.count ?? 0} 天
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-text-secondary">Form / Fitness</span>
@@ -199,7 +220,9 @@ const DecisionDetail = () => {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-text-secondary">睡眠 / HRV</span>
-            <span className="text-sm text-text-secondary">暂未接入</span>
+            <span className={sleepDays > 0 || hrvDays > 0 ? 'text-sm text-status-success' : 'text-sm text-text-secondary'}>
+              睡眠 {sleepDays} 天 · HRV {hrvDays} 天
+            </span>
           </div>
         </div>
       </div>
