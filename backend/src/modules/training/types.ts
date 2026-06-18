@@ -143,7 +143,8 @@ export type FeedbackType =
   | 'completed_less'
   | 'illness'
   | 'travel'
-  | 'stress_high';
+  | 'stress_high'
+  | 'other';
 
 /**
  * 调整后的训练建议

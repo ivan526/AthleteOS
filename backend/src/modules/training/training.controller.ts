@@ -35,6 +35,20 @@ export class TrainingController {
       const state = await this.dailyStateBuilder.buildDailyState(userId, today);
       const decision = await this.decisionEngine.generateDailyDecision(userId, state, today);
       const savedRecommendation = await this.findRecommendationForDate(userId, today);
+      const useSavedRecommendation = Boolean(
+        savedRecommendation && ['adjusted', 'completed', 'skipped'].includes(savedRecommendation.status),
+      );
+      const effectiveRecommendation = useSavedRecommendation
+        ? {
+            sport: savedRecommendation!.sport,
+            type: savedRecommendation!.type,
+            title: savedRecommendation!.title,
+            durationMinutes: savedRecommendation!.durationMinutes,
+            expectedTss: savedRecommendation!.expectedTss,
+            intensity: savedRecommendation!.intensity,
+            structure: savedRecommendation!.structure as any,
+          }
+        : decision.recommendation;
 
       return {
         date: today.toISOString().split('T')[0],
@@ -52,16 +66,18 @@ export class TrainingController {
         },
         recommendation: {
           id: savedRecommendation?.id ?? '',
-          sport: decision.recommendation.sport,
-          type: decision.recommendation.type,
-          title: decision.recommendation.title,
-          duration_minutes: decision.recommendation.durationMinutes,
-          expected_tss: decision.recommendation.expectedTss,
-          intensity: decision.recommendation.intensity,
-          structure: this.toApiStructure(decision.recommendation.structure),
+          sport: effectiveRecommendation.sport,
+          type: effectiveRecommendation.type,
+          title: effectiveRecommendation.title,
+          duration_minutes: effectiveRecommendation.durationMinutes,
+          expected_tss: effectiveRecommendation.expectedTss,
+          intensity: effectiveRecommendation.intensity,
+          structure: this.toApiStructure(effectiveRecommendation.structure),
         },
         explanation: {
-          simple: decision.decision.userFriendlyReason,
+          simple: useSavedRecommendation
+            ? savedRecommendation!.userFriendlyReason
+            : decision.decision.userFriendlyReason,
           reasons: this.buildFriendlyReasons(state),
           ai_coach: {
             used_llm: Boolean(decision.decisionJson.aiCoach?.usedLlm),
@@ -111,6 +127,7 @@ export class TrainingController {
       available_time_minutes?: number;
       preferred_sport?: string;
       note?: string;
+      pain_area?: string;
     },
   ) {
     const userId = await this.currentUser.getUserId();
@@ -121,18 +138,28 @@ export class TrainingController {
       throw new Error('训练建议不存在');
     }
 
+    const feedbackType = body.feedback_type || 'other';
     const result = await this.decisionEngine.adjustRecommendation(
       userId,
       recommendationId,
-      body.feedback_type,
+      feedbackType,
       {
         subjectiveFatigue: body.subjective_fatigue,
         pain: body.pain,
+        painArea: body.pain_area,
         availableTimeMinutes: body.available_time_minutes,
         preferredSport: body.preferred_sport,
         note: body.note,
       },
     );
+
+    if (body.subjective_fatigue != null) {
+      const today = this.dateOnly(new Date());
+      await this.prisma.dailyAthleteState.updateMany({
+        where: { userId, date: today },
+        data: { subjectiveFatigue: body.subjective_fatigue },
+      });
+    }
 
     return {
       adjusted: result.adjusted,
@@ -155,6 +182,49 @@ export class TrainingController {
         adjustment_reason: result.decision.adjustmentReason,
       },
     };
+  }
+
+  @Get('feedback')
+  async getFeedbackHistory(@Query('limit') limit = '20') {
+    const userId = await this.currentUser.getUserId();
+    const take = Math.max(1, Math.min(Number(limit) || 20, 100));
+    const feedback = await this.prisma.userFeedback.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take,
+      include: {
+        recommendation: {
+          select: {
+            date: true,
+            title: true,
+            type: true,
+            durationMinutes: true,
+            expectedTss: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    return feedback.map((item) => ({
+      id: item.id,
+      created_at: item.createdAt,
+      date: item.recommendation.date.toISOString().slice(0, 10),
+      feedback_type: item.feedbackType || 'other',
+      subjective_fatigue: item.subjectiveFatigue,
+      pain: item.pain,
+      pain_area: item.painArea,
+      available_time_minutes: item.availableTimeMinutes,
+      preferred_sport: item.preferredSport,
+      note: item.note,
+      recommendation: {
+        title: item.recommendation.title,
+        type: item.recommendation.type,
+        duration_minutes: item.recommendation.durationMinutes,
+        expected_tss: item.recommendation.expectedTss,
+        status: item.recommendation.status,
+      },
+    }));
   }
 
   /**

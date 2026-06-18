@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import Modal from './Modal'
 import { submitFeedback, type FeedbackRequest } from '../lib/api'
@@ -24,6 +24,16 @@ const FeedbackModal = ({ isOpen, onClose, recommendationId, feedbackType, onSucc
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<any>(null)
 
+  useEffect(() => {
+    if (isOpen) {
+      setResult(null)
+      setFormData({
+        recommendation_id: recommendationId,
+        feedback_type: feedbackType,
+      })
+    }
+  }, [isOpen, recommendationId, feedbackType])
+
   const getFeedbackTitle = (type: string) => {
     const titles: Record<string, string> = {
       too_tired: '今天感觉很累？',
@@ -40,9 +50,7 @@ const FeedbackModal = ({ isOpen, onClose, recommendationId, feedbackType, onSucc
     e.preventDefault()
     try {
       setSubmitting(true)
-      // 移除pain_area字段，因为API不接收
-      const { pain_area, ...submitData } = formData
-      const response = await submitFeedback(submitData as FeedbackRequest)
+      const response = await submitFeedback(formData as FeedbackRequest)
       setResult(response)
       if (onSuccess) {
         onSuccess(response)

@@ -3,7 +3,13 @@ import { ChevronDown, ChevronUp, Info, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import FeedbackModal from '../components/FeedbackModal'
-import { getTodayData, submitFeedback, type TodayResponse } from '../lib/api'
+import {
+  getFeedbackHistory,
+  getTodayData,
+  submitFeedback,
+  type FeedbackHistoryItem,
+  type TodayResponse,
+} from '../lib/api'
 
 const Today = () => {
   const [showTechnicalDetail, setShowTechnicalDetail] = useState(false)
@@ -11,6 +17,7 @@ const Today = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAdjusted, setShowAdjusted] = useState(false)
+  const [feedbackHistory, setFeedbackHistory] = useState<FeedbackHistoryItem[]>([])
   const [adjustedMessage, setAdjustedMessage] = useState('')
   const [feedbackModal, setFeedbackModal] = useState<{
     isOpen: boolean
@@ -22,13 +29,17 @@ const Today = () => {
     fetchTodayData()
   }, [])
 
-  const fetchTodayData = async () => {
+  const fetchTodayData = async (resetAdjusted = true) => {
     try {
       setLoading(true)
       setError(null)
-      const result = await getTodayData()
+      const [result, history] = await Promise.all([
+        getTodayData(),
+        getFeedbackHistory(20),
+      ])
       setData(result)
-      setShowAdjusted(false)
+      setFeedbackHistory(history)
+      if (resetAdjusted) setShowAdjusted(false)
     } catch (err: any) {
       setError(err.message || '加载失败，请稍后重试')
     } finally {
@@ -63,6 +74,7 @@ const Today = () => {
             recommendation_id: data.recommendation.id,
             feedback_type: feedbackType as any,
           })
+          await fetchTodayData()
           alert('反馈已提交')
         } catch (err: any) {
           alert(`提交失败: ${err.message}`)
@@ -85,8 +97,26 @@ const Today = () => {
       setAdjustedMessage(result.reason)
       setShowAdjusted(true)
       // 重新获取数据更新页面
-      setTimeout(fetchTodayData, 2000)
+      setTimeout(() => fetchTodayData(false), 300)
+    } else {
+      fetchTodayData()
     }
+  }
+
+  const feedbackLabels: Record<string, string> = {
+    too_tired: '太累了',
+    not_enough_time: '时间不足',
+    pain_or_discomfort: '疼痛或不适',
+    change_sport: '更换运动',
+    skip_today: '今天休息',
+    completed_as_planned: '按计划完成',
+    completed_modified: '调整后完成',
+    completed_more: '完成更多',
+    completed_less: '完成较少',
+    illness: '身体不适',
+    travel: '出行',
+    stress_high: '压力较高',
+    other: '其他反馈',
   }
 
   if (loading) {
@@ -104,7 +134,7 @@ const Today = () => {
       <Layout>
         <div className="p-4 flex flex-col items-center justify-center h-[60vh] gap-4">
           <p className="text-text-secondary">{error || '数据加载失败'}</p>
-          <button className="btn-primary" onClick={fetchTodayData}>
+          <button className="btn-primary" onClick={() => fetchTodayData()}>
             重新加载
           </button>
         </div>
@@ -264,6 +294,37 @@ const Today = () => {
             })}
           </div>
         </div>
+
+        {feedbackHistory.filter((item) => item.date === data.date).length > 0 && (
+          <div className="card mb-6">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h3 className="text-lg font-semibold text-text-primary">今日反馈记录</h3>
+              <Link to="/feedback" className="text-sm text-primary">查看全部</Link>
+            </div>
+            <div className="space-y-3">
+              {feedbackHistory
+                .filter((item) => item.date === data.date)
+                .slice(0, 5)
+                .map((item) => (
+                  <div key={item.id} className="flex items-start justify-between gap-3 border-b border-border/60 pb-3 last:border-0 last:pb-0">
+                    <div>
+                      <p className="font-medium text-text-primary">
+                        {feedbackLabels[item.feedback_type] ?? item.feedback_type}
+                      </p>
+                      <p className="text-sm text-text-secondary">
+                        {item.subjective_fatigue != null ? `疲劳 ${item.subjective_fatigue}/10 · ` : ''}
+                        {item.available_time_minutes != null ? `可用 ${item.available_time_minutes} 分钟 · ` : ''}
+                        {item.note || item.pain_area || item.recommendation.title}
+                      </p>
+                    </div>
+                    <span className="text-xs text-text-muted whitespace-nowrap">
+                      {new Date(item.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
 
         {/* 技术详情抽屉 */}
         <div className="card mb-20">

@@ -407,6 +407,16 @@ export class WorkoutGeneratorService {
         adjusted.title = original.sport === 'running' ? '轻松跑' : '轻松骑';
         adjusted.expectedTss = Math.round(original.expectedTss * 0.7);
         break;
+
+      case 'skip_today':
+        adjusted.sport = 'strength';
+        adjusted.type = 'mobility';
+        adjusted.title = '今日休息';
+        adjusted.durationMinutes = 0;
+        adjusted.expectedTss = 0;
+        adjusted.intensity = 'easy';
+        adjusted.structure = { mainSet: '休息并关注恢复，可按舒适程度进行轻柔活动' };
+        break;
     }
 
     return adjusted;

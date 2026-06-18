@@ -16,6 +16,7 @@ import SafetySettings from './pages/settings/Safety'
 import UnitsSettings from './pages/settings/Units'
 import AboutPage from './pages/settings/About'
 import ActivityDetail from './pages/ActivityDetail'
+import FeedbackHistory from './pages/FeedbackHistory'
 
 function App() {
   return (
@@ -40,6 +41,7 @@ function App() {
           <Route path="/settings/units" element={<UnitsSettings />} />
           <Route path="/settings/about" element={<AboutPage />} />
           <Route path="/activity/:id" element={<ActivityDetail />} />
+          <Route path="/feedback" element={<FeedbackHistory />} />
         </Routes>
       </div>
     </Router>
