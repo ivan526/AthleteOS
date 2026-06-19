@@ -724,14 +724,23 @@ export class TrainingController {
 
   private toApiActivity(activity: any) {
     const distanceKm = activity.distanceMeters ? activity.distanceMeters / 1000 : 0;
-    const pace = activity.avgPace ? this.formatPace(activity.avgPace) : undefined;
+    const pace = activity.sport === 'running' && activity.avgPace
+      ? this.formatPace(activity.avgPace)
+      : undefined;
+    const rawAverageSpeed = activity.rawData?.avg_speed ?? activity.rawData?.average_speed;
+    const averageSpeedMps = rawAverageSpeed ?? (
+      activity.distanceMeters && activity.durationSeconds
+        ? activity.distanceMeters / activity.durationSeconds
+        : undefined
+    );
+    const maxSpeedMps = activity.rawData?.max_speed;
 
     return {
       id: activity.id,
       date: activity.startTime.toISOString().split('T')[0],
       type: this.getSportLabel(activity.sport),
       sport: activity.sport,
-      name: this.getActivityName(activity.sport, activity.tss || 0),
+      name: this.getActivityName(activity.sport, activity.tss || 0, activity.rawData?.name),
       duration: `${Math.round(activity.durationSeconds / 60)} 分钟`,
       durationSeconds: activity.durationSeconds,
       distance: distanceKm ? `${distanceKm.toFixed(1)} km` : '-',
@@ -739,9 +748,16 @@ export class TrainingController {
       tss: Math.round(activity.tss || 0),
       intensity: this.getIntensityLabel(activity.tss || 0),
       avgPace: pace,
+      avgSpeedKmh: averageSpeedMps ? Number((averageSpeedMps * 3.6).toFixed(1)) : undefined,
+      maxSpeedKmh: maxSpeedMps ? Number((maxSpeedMps * 3.6).toFixed(1)) : undefined,
       avgHr: activity.avgHr ? Math.round(activity.avgHr) : undefined,
       maxHr: activity.maxHr ? Math.round(activity.maxHr) : undefined,
       avgCadence: activity.rawData?.average_cadence ? Math.round(activity.rawData.average_cadence) : undefined,
+      avgPower: activity.avgPower ? Math.round(activity.avgPower) : undefined,
+      normalizedPower: activity.normalizedPower ? Math.round(activity.normalizedPower) : undefined,
+      intensityFactor: activity.intensityFactor
+        ? Number(activity.intensityFactor.toFixed(2))
+        : undefined,
       calories: activity.rawData?.calories ? Math.round(activity.rawData.calories) : undefined,
       elevationGain: activity.elevationGain ? `${Math.round(activity.elevationGain)} m` : undefined,
     };
@@ -759,8 +775,9 @@ export class TrainingController {
     return labels[sport] || sport;
   }
 
-  private getActivityName(sport: string, tss: number) {
-    if (sport === 'cycling') return tss > 70 ? '节奏骑' : '有氧骑';
+  private getActivityName(sport: string, tss: number, sourceName?: string) {
+    if (sourceName?.trim()) return sourceName.trim();
+    if (sport === 'cycling') return '骑行';
     if (sport === 'running') return tss > 75 ? '长距离跑' : tss > 55 ? '节奏跑' : '轻松跑';
     return '训练';
   }
