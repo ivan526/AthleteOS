@@ -106,6 +106,23 @@ const History = () => {
     return `${pct >= 0 ? '+' : ''}${pct}%`
   }
 
+  const getPerformanceSummary = (activity: Activity) => {
+    if (activity.sport === 'cycling') {
+      return [
+        activity.avgSpeedKmh != null ? `均速 ${activity.avgSpeedKmh} km/h` : null,
+        activity.avgPower != null ? `均功率 ${activity.avgPower} W` : null,
+        activity.avgHr != null ? `均心率 ${activity.avgHr} bpm` : null,
+      ].filter(Boolean).join(' · ')
+    }
+    if (activity.sport === 'running') {
+      return [
+        activity.avgPace ? `配速 ${activity.avgPace}` : null,
+        activity.avgHr != null ? `均心率 ${activity.avgHr} bpm` : null,
+      ].filter(Boolean).join(' · ')
+    }
+    return activity.avgHr != null ? `均心率 ${activity.avgHr} bpm` : ''
+  }
+
   const getRiskText = (level?: string) => {
     switch (level) {
       case 'low': return '较低'
@@ -433,6 +450,11 @@ const History = () => {
                           </div>
                           {activity.tss > 0 && (
                             <div className="text-sm text-primary">TSS {activity.tss}</div>
+                          )}
+                          {getPerformanceSummary(activity) && (
+                            <div className="mt-1 text-xs text-text-secondary">
+                              {getPerformanceSummary(activity)}
+                            </div>
                           )}
                         </div>
                       </div>

@@ -1,5 +1,17 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, Calendar, Clock, Activity as ActivityIcon, TrendingUp, Heart, Footprints, Mountain, Zap } from 'lucide-react'
+import {
+  ArrowLeft,
+  Calendar,
+  Clock,
+  Activity as ActivityIcon,
+  TrendingUp,
+  Heart,
+  Footprints,
+  Mountain,
+  Zap,
+  Gauge,
+  RefreshCw,
+} from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { getActivityDetail, type Activity } from '../lib/api'
 
@@ -22,11 +34,10 @@ const ActivityDetail = () => {
         setLoading(true)
         setError(null)
         const data = await getActivityDetail(id)
-        // 扩展数据，添加默认分段和感受
+        // 分段数据尚未落库，保留空数组。
         setActivity({
           ...data,
-          feeling: '不错',
-          splits: [] // 后端暂未实现分段数据
+          splits: [],
         })
       } catch (err: any) {
         console.error('加载活动详情失败:', err)
@@ -51,6 +62,8 @@ const ActivityDetail = () => {
         return 'text-text-secondary bg-gray-50'
     }
   }
+
+  const isCycling = activity?.sport === 'cycling'
 
   if (loading) {
     return (
@@ -122,8 +135,10 @@ const ActivityDetail = () => {
 
         {/* 核心数据 */}
         <div className="card mb-4">
-          <h3 className="text-lg font-semibold text-text-primary mb-3">数据概览</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <h3 className="text-lg font-semibold text-text-primary mb-3">
+            {isCycling ? '骑行数据' : '数据概览'}
+          </h3>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-5">
             <div className="text-center">
               <div className="flex items-center justify-center gap-1 mb-1 text-text-secondary">
                 <ActivityIcon size={16} />
@@ -133,10 +148,17 @@ const ActivityDetail = () => {
             </div>
             <div className="text-center">
               <div className="flex items-center justify-center gap-1 mb-1 text-text-secondary">
-                <Zap size={16} />
-                <span className="text-sm">平均配速</span>
+                {isCycling ? <Gauge size={16} /> : <Zap size={16} />}
+                <span className="text-sm">{isCycling ? '平均速度' : '平均配速'}</span>
               </div>
-              <p className="text-2xl font-bold text-text-primary">{activity.avgPace || '-'}</p>
+              <p className="text-2xl font-bold text-text-primary">
+                {isCycling
+                  ? activity.avgSpeedKmh != null ? `${activity.avgSpeedKmh} km/h` : '-'
+                  : activity.avgPace || '-'}
+              </p>
+              {isCycling && activity.maxSpeedKmh != null && (
+                <p className="text-xs text-text-secondary">最高 {activity.maxSpeedKmh} km/h</p>
+              )}
             </div>
             <div className="text-center">
               <div className="flex items-center justify-center gap-1 mb-1 text-text-secondary">
@@ -150,11 +172,40 @@ const ActivityDetail = () => {
             </div>
             <div className="text-center">
               <div className="flex items-center justify-center gap-1 mb-1 text-text-secondary">
-                <Footprints size={16} />
-                <span className="text-sm">平均步频</span>
+                {isCycling ? <RefreshCw size={16} /> : <Footprints size={16} />}
+                <span className="text-sm">{isCycling ? '平均踏频' : '平均步频'}</span>
               </div>
-              <p className="text-2xl font-bold text-text-primary">{activity.avgCadence ? `${activity.avgCadence} spm` : '-'}</p>
+              <p className="text-2xl font-bold text-text-primary">
+                {activity.avgCadence
+                  ? `${activity.avgCadence} ${isCycling ? 'rpm' : 'spm'}`
+                  : '未记录'}
+              </p>
             </div>
+            {isCycling && (
+              <>
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-1 mb-1 text-text-secondary">
+                    <Zap size={16} />
+                    <span className="text-sm">平均功率</span>
+                  </div>
+                  <p className="text-2xl font-bold text-text-primary">
+                    {activity.avgPower != null ? `${activity.avgPower} W` : '未记录'}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-1 mb-1 text-text-secondary">
+                    <TrendingUp size={16} />
+                    <span className="text-sm">标准化功率 (NP)</span>
+                  </div>
+                  <p className="text-2xl font-bold text-text-primary">
+                    {activity.normalizedPower != null ? `${activity.normalizedPower} W` : '未记录'}
+                  </p>
+                  {activity.intensityFactor != null && (
+                    <p className="text-xs text-text-secondary">IF {activity.intensityFactor.toFixed(2)}</p>
+                  )}
+                </div>
+              </>
+            )}
             <div className="text-center">
               <div className="flex items-center justify-center gap-1 mb-1 text-text-secondary">
                 <Mountain size={16} />
@@ -171,6 +222,12 @@ const ActivityDetail = () => {
             </div>
           </div>
         </div>
+
+        {isCycling && activity.avgPower == null && (
+          <div className="mb-4 rounded-lg border border-border bg-background-weak px-3 py-2 text-sm text-text-secondary">
+            本次活动未记录功率计数据，速度、心率和训练负荷仍来自 Intervals.icu 原始活动。
+          </div>
+        )}
 
         {/* 分段数据 */}
         {activity.splits && activity.splits.length > 0 && (

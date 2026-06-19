@@ -272,9 +272,14 @@ export interface Activity {
   tss: number
   intensity: string
   avgPace?: string
+  avgSpeedKmh?: number
+  maxSpeedKmh?: number
   avgHr?: number
   maxHr?: number
   avgCadence?: number
+  avgPower?: number
+  normalizedPower?: number
+  intensityFactor?: number
   elevationGain?: string
   calories?: number
   notes?: string
