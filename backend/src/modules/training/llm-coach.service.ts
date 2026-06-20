@@ -8,6 +8,7 @@ export type AiCoachInteractionType =
   | 'training_explanation'
   | 'feedback_explanation'
   | 'training_analysis'
+  | 'activity_analysis'
   | 'question';
 
 export interface AiCoachTextResult {
@@ -80,6 +81,24 @@ export class LlmCoachService {
       ...params,
       interactionType: 'training_analysis',
       instruction: '根据周报、模型覆盖和恢复趋势，生成 2 到 4 句中文训练分析。明确数据不足之处，不编造指标，不做医学判断。',
+    });
+  }
+
+  analyzeActivity(params: {
+    userId: string;
+    fallbackText: string;
+    evidence: Record<string, unknown>;
+    ruleResult?: Record<string, unknown>;
+  }) {
+    return this.generate({
+      ...params,
+      interactionType: 'activity_analysis',
+      instruction: [
+        '根据单次训练的运动类型、时长、距离、训练负荷、心率、配速或骑行功率等证据，',
+        '用专业但容易理解的中文给出 3 到 5 句训练评价。',
+        '评价应覆盖主要训练刺激、对运动员的益处、完成质量、注意点和恢复重点。',
+        '不得编造分区、阈值、伤病或未提供的数据，不得做医学诊断。',
+      ].join(''),
     });
   }
 

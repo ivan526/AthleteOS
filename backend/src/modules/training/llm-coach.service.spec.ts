@@ -101,4 +101,19 @@ describe('LlmCoachService', () => {
       data: expect.objectContaining({ cacheHit: true }),
     }));
   });
+
+  it('provides deterministic activity analysis when the LLM is disabled', async () => {
+    prisma.llmSetting.findUnique.mockResolvedValue({ enabled: false });
+
+    const result = await service.analyzeActivity({
+      userId: 'user-1',
+      fallbackText: '本次训练形成了有效的有氧耐力刺激。',
+      evidence: { sport: 'running', tss: 45 },
+    });
+
+    expect(result.text).toContain('有氧耐力刺激');
+    expect(result.usedLlm).toBe(false);
+    expect(result.fallbackUsed).toBe(true);
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
 });

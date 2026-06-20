@@ -39,6 +39,12 @@ export class SyncController {
     );
   }
 
+  @Post('daily')
+  async syncDaily() {
+    const userId = await this.currentUser.getUserId();
+    return this.syncService.syncDailyData(userId);
+  }
+
   /**
    * 获取同步状态
    */

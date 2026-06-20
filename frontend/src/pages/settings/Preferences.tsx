@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Layout from '../../components/Layout'
+import { getSettings, updateSettings } from '../../lib/api'
 
 const PreferencesSettings = () => {
   const [formData, setFormData] = useState({
@@ -13,11 +14,46 @@ const PreferencesSettings = () => {
     avoidHighIntensity: false,
     restDayPreference: 'active',
   })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    getSettings()
+      .then((settings) => {
+        setFormData((current) => ({
+          ...current,
+          primarySport: settings.primary_sport,
+          weeklyAvailableDays: settings.weekly_available_days,
+          preferredSports: settings.preferred_sports?.length
+            ? settings.preferred_sports
+            : ['running', 'cycling'],
+        }))
+      })
+      .catch((error) => {
+        alert(`加载训练偏好失败: ${error.message}`)
+      })
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: 提交保存
-    alert('训练偏好已保存')
+    try {
+      setSaving(true)
+      const preferredSports = formData.preferredSports.includes(formData.primarySport)
+        ? formData.preferredSports
+        : [formData.primarySport, ...formData.preferredSports]
+      await updateSettings({
+        primary_sport: formData.primarySport,
+        weekly_available_days: formData.weeklyAvailableDays,
+        preferred_sports: preferredSports,
+      })
+      setFormData((current) => ({ ...current, preferredSports }))
+      alert('训练偏好已保存，今日建议可按这些项目切换')
+    } catch (error: any) {
+      alert(`保存失败: ${error.message}`)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const toggleSport = (sport: string) => {
@@ -63,7 +99,7 @@ const PreferencesSettings = () => {
                     { value: 'running', label: '跑步', emoji: '🏃' },
                     { value: 'cycling', label: '骑行', emoji: '🚴' },
                     { value: 'swimming', label: '游泳', emoji: '🏊' },
-                    { value: 'triathlon', label: '铁三', emoji: '🏊🚴🏃' },
+                    { value: 'strength', label: '力量训练', emoji: '💪' },
                   ].map((sport) => (
                     <label
                       key={sport.value}
@@ -98,8 +134,6 @@ const PreferencesSettings = () => {
                     { value: 'cycling', label: '骑行', emoji: '🚴' },
                     { value: 'swimming', label: '游泳', emoji: '🏊' },
                     { value: 'strength', label: '力量训练', emoji: '💪' },
-                    { value: 'yoga', label: '瑜伽', emoji: '🧘' },
-                    { value: 'hiking', label: '徒步', emoji: '🥾' },
                   ].map((sport) => (
                     <label
                       key={sport.value}
@@ -244,8 +278,8 @@ const PreferencesSettings = () => {
             </div>
           </div>
 
-          <button type="submit" className="btn-primary w-full">
-            保存更改
+          <button type="submit" className="btn-primary w-full" disabled={loading || saving}>
+            {loading ? '加载中...' : saving ? '保存中...' : '保存更改'}
           </button>
         </form>
       </div>

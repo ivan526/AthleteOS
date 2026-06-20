@@ -59,6 +59,7 @@ const defaultSettings: UserSettings = {
   garmin_last_sync_at: null,
   garmin_sync_status: 'not_connected',
   garmin_sync_message: '未配置 Garmin Connect',
+  primary_data_source: 'intervals.icu',
   llm_provider: 'openai-compatible',
   llm_model: '',
   llm_base_url: '',
@@ -252,20 +253,22 @@ const Settings = () => {
                 <Link2 size={20} className="text-status-info" />
               </div>
               <div className="min-w-0">
-                <h3 className="font-medium text-text-primary">Intervals.icu 数据连接</h3>
+                <h3 className="font-medium text-text-primary">
+                  Intervals.icu 辅助数据源
+                </h3>
                 <p className="text-sm text-text-secondary">
-                  {syncStatus.connected
-                    ? `已连接 · 已同步 ${syncStatus.activitiesCount} 条训练记录`
-                    : '未连接主数据源'}
+                  {settings.has_credentials
+                    ? `已连接 · 双源合计 ${syncStatus.activitiesCount} 条训练记录`
+                    : '未连接，可用于补充 TSS / NP / IF'}
                 </p>
-                {syncStatus.connected && (
+                {settings.has_credentials && (
                   <p className="text-xs text-text-secondary mt-0.5">
                     上次同步：{syncStatus.lastSync}
                   </p>
                 )}
               </div>
             </div>
-            {syncStatus.connected ? (
+            {settings.has_credentials ? (
               <button
                 onClick={handleSync}
                 disabled={syncing}
@@ -288,13 +291,16 @@ const Settings = () => {
               <Watch size={20} className="text-primary" />
             </div>
             <div>
-              <h3 className="font-medium text-text-primary">Garmin HRV 补充数据源</h3>
+              <h3 className="font-medium text-text-primary">
+                Garmin 中国区主数据源
+              </h3>
               <p className="text-sm text-text-secondary">
                 {settings.has_garmin_credentials
                   ? `已配置 · ${settings.garmin_sync_message}`
-                  : '可选配置，用于补充 Intervals.icu 缺失的 HRV'}
+                  : '配置后同步活动、睡眠、HRV、静息心率和训练准备度'}
               </p>
               <p className="text-xs text-text-secondary mt-0.5">
+                {settings.primary_data_source === 'garmin.cn' ? '当前主数据源 · ' : ''}
                 上次同步：{formatDateTime(settings.garmin_last_sync_at)}
               </p>
             </div>

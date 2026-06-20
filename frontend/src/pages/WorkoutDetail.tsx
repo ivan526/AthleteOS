@@ -37,11 +37,32 @@ const WorkoutDetail = () => {
       setError(null)
       // 从今日训练接口获取推荐数据
       const todayData = await getTodayData()
+      const sportCopy: Record<string, { purpose: string; tips: string; notes: string }> = {
+        running: {
+          purpose: '提升有氧耐力、跑步经济性和配速维持能力',
+          tips: '保持目标呼吸节奏和动作稳定，高强度段也不要失去跑姿控制。',
+          notes: '如果出现疼痛或动作明显变形，降低配速或停止训练。',
+        },
+        cycling: {
+          purpose: '提升骑行有氧耐力、持续输出能力和踏频效率',
+          tips: '保持稳定踏频与圆顺踩踏，强度以可持续输出为准。',
+          notes: '户外骑行注意路况、补水与能量补给，疲劳时避免勉强冲刺。',
+        },
+        swimming: {
+          purpose: '提升游泳有氧耐力、划水效率和呼吸节奏',
+          tips: '动作质量优先于速度，保持流线型和稳定呼吸。',
+          notes: '避免独自进行高强度水上训练；出现胸闷、眩晕或抽筋立即停止。',
+        },
+        strength: {
+          purpose: '提升核心稳定、动作控制和基础力量',
+          tips: '保留动作余量，优先保证姿势与关节排列，不追求力竭。',
+          notes: '疼痛不是正常训练刺激；出现锐痛时立即停止对应动作。',
+        },
+      }
+      const copy = sportCopy[todayData.recommendation.sport] ?? sportCopy.running
       const recommendation: RecommendationResponse = {
         ...todayData.recommendation,
-        purpose: '提升目标配速维持能力',
-        tips: '呼吸有压力，但不应进入冲刺状态。',
-        notes: '如果身体不适，改为轻松跑或休息。'
+        ...copy,
       }
       setData(recommendation)
     } catch (err: any) {
@@ -154,6 +175,7 @@ const WorkoutDetail = () => {
 
   const getIntensityText = (intensity: string) => {
     switch (intensity) {
+      case 'easy':
       case 'low': return '低强度'
       case 'moderate': return '中等强度'
       case 'high': return '高强度'
@@ -236,7 +258,7 @@ const WorkoutDetail = () => {
         {/* 强度提示 */}
         <div className="card mb-4">
           <h3 className="text-lg font-semibold text-text-primary mb-3">强度提示</h3>
-          <p className="text-text-secondary">{data.tips || '呼吸有压力，但不应进入冲刺状态。'}</p>
+          <p className="text-text-secondary">{data.tips}</p>
         </div>
 
         {/* 注意事项 */}
@@ -245,7 +267,7 @@ const WorkoutDetail = () => {
             <AlertTriangle size={20} className="text-status-warning mt-0.5 flex-shrink-0" />
             <h3 className="text-lg font-semibold text-text-primary">注意事项</h3>
           </div>
-          <p className="text-text-secondary">{data.notes || '如果腿部不适，改为轻松跑或休息。'}</p>
+          <p className="text-text-secondary">{data.notes}</p>
         </div>
       </div>
 

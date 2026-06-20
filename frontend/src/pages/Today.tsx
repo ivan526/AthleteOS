@@ -19,6 +19,7 @@ const Today = () => {
   const [showAdjusted, setShowAdjusted] = useState(false)
   const [feedbackHistory, setFeedbackHistory] = useState<FeedbackHistoryItem[]>([])
   const [adjustedMessage, setAdjustedMessage] = useState('')
+  const [switchingSport, setSwitchingSport] = useState<string | null>(null)
   const [feedbackModal, setFeedbackModal] = useState<{
     isOpen: boolean
     type: string
@@ -100,6 +101,26 @@ const Today = () => {
       setTimeout(() => fetchTodayData(false), 300)
     } else {
       fetchTodayData()
+    }
+  }
+
+  const handleSportChange = async (sport: string) => {
+    if (!data || sport === data.recommendation.sport || switchingSport) return
+
+    try {
+      setSwitchingSport(sport)
+      const result = await submitFeedback({
+        recommendation_id: data.recommendation.id,
+        feedback_type: 'change_sport',
+        preferred_sport: sport,
+      })
+      setAdjustedMessage(result.reason)
+      setShowAdjusted(true)
+      await fetchTodayData(false)
+    } catch (err: any) {
+      alert(`切换失败: ${err.message}`)
+    } finally {
+      setSwitchingSport(null)
     }
   }
 
@@ -211,6 +232,36 @@ const Today = () => {
 
         {/* 训练建议卡片 */}
         <div className="card mb-4">
+          <div className="mb-4">
+            <p className="text-sm font-medium text-text-primary mb-2">选择今日运动</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {data.sport_options.map((option) => {
+                const icons: Record<string, string> = {
+                  running: '🏃',
+                  cycling: '🚴',
+                  swimming: '🏊',
+                  strength: '💪',
+                }
+                const active = data.recommendation.sport === option.sport
+                return (
+                  <button
+                    key={option.sport}
+                    type="button"
+                    disabled={Boolean(switchingSport)}
+                    onClick={() => handleSportChange(option.sport)}
+                    className={`h-11 rounded-lg border text-sm font-medium transition-colors ${
+                      active
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-white text-text-secondary hover:border-primary/50'
+                    } disabled:opacity-60`}
+                  >
+                    <span className="mr-1">{icons[option.sport] ?? '🏋️'}</span>
+                    {switchingSport === option.sport ? '生成中' : option.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
           <div className="flex items-start justify-between mb-3">
             <div>
               <h3 className="text-xl font-semibold text-text-primary mb-1">
@@ -277,7 +328,7 @@ const Today = () => {
                 'too_tired': '太累了',
                 'not_enough_time': '只有30分钟',
                 'pain_or_discomfort': '腿部不适',
-                'change_sport': '换成骑行',
+                'change_sport': '更换运动',
                 'skip_today': '今天休息',
                 'completed_as_planned': '已完成',
               }

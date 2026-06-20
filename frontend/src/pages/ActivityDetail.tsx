@@ -11,18 +11,18 @@ import {
   Zap,
   Gauge,
   RefreshCw,
+  Brain,
+  ShieldAlert,
+  BatteryCharging,
+  Database,
+  Target,
 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
-import { getActivityDetail, type Activity } from '../lib/api'
-
-interface ActivityDetailType extends Activity {
-  feeling?: string
-  splits: Array<{ km: string; pace: string; hr: number }>
-}
+import { getActivityDetail, type ActivityDetailResponse } from '../lib/api'
 
 const ActivityDetail = () => {
   const { id } = useParams<{ id: string }>()
-  const [activity, setActivity] = useState<ActivityDetailType | null>(null)
+  const [activity, setActivity] = useState<ActivityDetailResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [, setError] = useState<string | null>(null)
 
@@ -34,11 +34,7 @@ const ActivityDetail = () => {
         setLoading(true)
         setError(null)
         const data = await getActivityDetail(id)
-        // 分段数据尚未落库，保留空数组。
-        setActivity({
-          ...data,
-          splits: [],
-        })
+        setActivity(data)
       } catch (err: any) {
         console.error('加载活动详情失败:', err)
         setError(err.message || '加载失败，请稍后重试')
@@ -64,6 +60,9 @@ const ActivityDetail = () => {
   }
 
   const isCycling = activity?.sport === 'cycling'
+  const metricGroups = activity
+    ? Array.from(new Set(activity.advancedMetrics.map((metric) => metric.group)))
+    : []
 
   if (loading) {
     return (
@@ -225,47 +224,119 @@ const ActivityDetail = () => {
 
         {isCycling && activity.avgPower == null && (
           <div className="mb-4 rounded-lg border border-border bg-background-weak px-3 py-2 text-sm text-text-secondary">
-            本次活动未记录功率计数据，速度、心率和训练负荷仍来自 Intervals.icu 原始活动。
+            本次活动未记录功率计数据，强度评价主要依据心率、速度和训练负荷。
           </div>
         )}
 
-        {/* 分段数据 */}
-        {activity.splits && activity.splits.length > 0 && (
+        {activity.advancedMetrics.length > 0 && (
           <div className="card mb-4">
-            <h3 className="text-lg font-semibold text-text-primary mb-3">分段数据</h3>
-            <div className="space-y-2">
-              {activity.splits.map((split, index) => (
-                <div key={index} className="flex items-center justify-between py-2 border-b border-border/60 last:border-0">
-                  <div className="font-medium text-text-primary">第 {split.km} 公里</div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-text-secondary">{split.pace}</span>
-                    <span className="text-text-secondary w-12 text-right">{split.hr} bpm</span>
+            <div className="flex items-center gap-2 mb-4">
+              <Gauge size={20} className="text-primary" />
+              <h3 className="text-lg font-semibold text-text-primary">高级数据</h3>
+            </div>
+            <div className="space-y-5">
+              {metricGroups.map((group) => (
+                <section key={group}>
+                  <h4 className="text-sm font-medium text-text-secondary mb-2">{group}</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {activity.advancedMetrics
+                      .filter((metric) => metric.group === group)
+                      .map((metric) => (
+                        <div key={metric.key} className="min-h-20 rounded-lg bg-background-weak p-3">
+                          <p className="text-xs text-text-secondary">{metric.label}</p>
+                          <p className="mt-1 text-lg font-semibold text-text-primary break-words">
+                            {metric.value}
+                          </p>
+                          {metric.note && (
+                            <p className="mt-1 text-xs text-text-muted">{metric.note}</p>
+                          )}
+                        </div>
+                      ))}
                   </div>
-                </div>
+                </section>
               ))}
             </div>
           </div>
         )}
 
-        {/* 自我感受 */}
-        {activity.feeling && (
-          <div className="card mb-4">
-            <h3 className="text-lg font-semibold text-text-primary mb-2">自我感受</h3>
-            <p className="text-text-secondary">{activity.feeling}</p>
+        <div className="card mb-4">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <Brain size={20} className="text-primary" />
+              <h3 className="text-lg font-semibold text-text-primary">AI Coach 训练点评</h3>
+            </div>
+            <span className="shrink-0 rounded bg-background-weak px-2 py-1 text-xs text-primary">
+              {activity.coachReview.usedLlm ? 'LLM 增强' : '规则分析'}
+            </span>
           </div>
-        )}
+          <p className="text-sm leading-6 text-text-primary">
+            {activity.coachReview.summary}
+          </p>
 
-        {/* 备注 */}
+          <div className="mt-4 rounded-lg bg-primary/5 p-3">
+            <div className="flex items-center gap-2 text-primary">
+              <Target size={17} />
+              <span className="text-sm font-medium">主要训练效果</span>
+            </div>
+            <p className="mt-1 text-sm text-text-primary">
+              {activity.coachReview.trainingEffect}
+            </p>
+          </div>
+
+          <div className="mt-4">
+            <h4 className="text-sm font-medium text-text-primary">对你的益处</h4>
+            <ul className="mt-2 space-y-2">
+              {activity.coachReview.benefits.map((item) => (
+                <li key={item} className="flex gap-2 text-sm text-text-secondary">
+                  <TrendingUp size={16} className="mt-0.5 shrink-0 text-status-success" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="mt-4">
+            <h4 className="text-sm font-medium text-text-primary">注意点</h4>
+            <ul className="mt-2 space-y-2">
+              {activity.coachReview.cautions.map((item) => (
+                <li key={item} className="flex gap-2 text-sm text-text-secondary">
+                  <ShieldAlert size={16} className="mt-0.5 shrink-0 text-status-warning" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="mt-4">
+            <h4 className="text-sm font-medium text-text-primary">恢复建议</h4>
+            <ul className="mt-2 space-y-2">
+              {activity.coachReview.recovery.map((item) => (
+                <li key={item} className="flex gap-2 text-sm text-text-secondary">
+                  <BatteryCharging size={16} className="mt-0.5 shrink-0 text-primary" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <p className="mt-4 border-t border-border/60 pt-3 text-xs text-text-muted">
+            {activity.coachReview.comparison}
+          </p>
+        </div>
+
         {activity.notes && (
-          <div className="card">
+          <div className="card mb-4">
             <h3 className="text-lg font-semibold text-text-primary mb-2">备注</h3>
             <p className="text-text-secondary">{activity.notes}</p>
           </div>
         )}
 
         {/* 数据来源 */}
-        <div className="mt-4 text-center text-xs text-text-muted">
-          <p>数据来源：Intervals.icu</p>
+        <div className="mt-4 flex items-center justify-center gap-1 text-xs text-text-muted">
+          <Database size={13} />
+          <p>
+            数据来源：{activity.dataSources.length ? activity.dataSources.join(' + ') : 'AthleteOS'}
+          </p>
         </div>
       </div>
     </div>

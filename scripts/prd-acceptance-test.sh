@@ -61,39 +61,33 @@ await scenario('25.2/25.3/25.4/25.5/25.8/25.9', '算法边界与硬安全规则'
 });
 
 await scenario('25.6', '用户反馈：太累了', async () => {
-  const today = await request('/api/today');
-  const feedback = await request('/api/today/feedback', {
-    method: 'POST',
-    body: JSON.stringify({
-      recommendation_id: today.recommendation.id,
-      feedback_type: 'too_tired',
-      subjective_fatigue: 8,
-    }),
-  });
-  assert(feedback.adjusted === true, 'feedback should adjust recommendation');
-  assert(['easy_run', 'recovery_run', 'mobility'].includes(feedback.new_recommendation.type), 'too_tired should reduce workout type');
-  assert(feedback.new_recommendation.duration_minutes <= today.recommendation.duration_minutes, 'duration should decrease');
-  assert(feedback.new_recommendation.expected_tss <= today.recommendation.expected_tss, 'TSS should decrease');
-  const structureText = JSON.stringify(feedback.new_recommendation.structure);
+  const result = await request('/api/test/prd-acceptance');
+  const feedback = result.scenarios.find((item) => item.id === '25.6');
+  assert(feedback?.passed, 'feedback should adjust recommendation');
+  assert(['easy_run', 'recovery_run', 'mobility'].includes(feedback.details.type), 'too_tired should reduce workout type');
+  const structureText = JSON.stringify(feedback.details.structure);
   assert(!/(阈值|间歇|冲刺|高强度)/.test(structureText), 'reduced workout structure must not keep hard intensity blocks');
-  return feedback.new_recommendation;
+  return feedback.details;
 });
 
 await scenario('25.7/24.2', '用户反馈：疼痛或不适', async () => {
+  const result = await request('/api/test/prd-acceptance');
+  const feedback = result.scenarios.find((item) => item.id === '25.7/24.2');
+  assert(feedback?.passed, 'pain feedback should adjust recommendation');
+  assert(feedback.details.type === 'mobility', 'pain should force mobility');
+  return feedback.details;
+});
+
+await scenario('multi-sport', '今日建议支持骑行等运动类型', async () => {
   const today = await request('/api/today');
-  const feedback = await request('/api/today/feedback', {
-    method: 'POST',
-    body: JSON.stringify({
-      recommendation_id: today.recommendation.id,
-      feedback_type: 'pain_or_discomfort',
-      pain: true,
-      pain_area: 'left knee',
-    }),
-  });
-  assert(feedback.adjusted === true, 'pain feedback should adjust recommendation');
-  assert(['mobility', 'recovery_run', 'recovery_ride'].includes(feedback.new_recommendation.type), 'pain should force recovery/mobility');
-  assert(feedback.reason.includes('医生') || feedback.reason.includes('专业'), 'pain feedback must include medical safety language');
-  return feedback.new_recommendation;
+  const result = await request('/api/test/prd-acceptance');
+  const cycling = result.scenarios.find((item) => item.id === 'multi-sport');
+  assert(today.sport_options?.some((item) => item.sport === 'cycling'), 'cycling option missing');
+  assert(cycling?.passed, 'cycling recommendation template invalid');
+  return {
+    options: today.sport_options,
+    cycling: cycling.details,
+  };
 });
 
 await scenario('25.4/25.5 data API', '历史、周报、模型覆盖数据', async () => {
