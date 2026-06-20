@@ -17,6 +17,9 @@ __pycache__/
 .env.*.local
 *凭证*.md
 *credentials*.md
+deployment/.env.production
+deployment/data/
+deployment/garmin-cache/
 
 # Database
 *.db

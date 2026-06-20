@@ -3,6 +3,8 @@
  */
 
 const API_BASE_URL = '/api'
+let accessToken = sessionStorage.getItem('athleteos_access_token')
+let refreshPromise: Promise<string | null> | null = null
 
 export interface ApiResponse<T = any> {
   success: boolean
@@ -120,6 +122,7 @@ export interface FeedbackResponse {
 async function request<T>(
   endpoint: string,
   options: RequestInit = {},
+  retryAuth = true,
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`
   const defaultHeaders = {
@@ -130,6 +133,7 @@ async function request<T>(
     credentials: 'include',
     headers: {
       ...defaultHeaders,
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...options.headers,
     },
     ...options,
@@ -137,9 +141,17 @@ async function request<T>(
 
   try {
     const response = await fetch(url, config)
-    const data = await response.json()
+    const data = await response.json().catch(() => ({}))
 
     if (!response.ok) {
+      if (
+        response.status === 401 &&
+        retryAuth &&
+        !endpoint.startsWith('/auth/')
+      ) {
+        const refreshed = await refreshAccessToken()
+        if (refreshed) return request<T>(endpoint, options, false)
+      }
       throw new Error(data.error || data.message || '请求失败')
     }
 
@@ -147,6 +159,87 @@ async function request<T>(
   } catch (error) {
     console.error('API 请求错误:', error)
     throw error
+  }
+}
+
+export interface AuthUser {
+  id: string
+  email: string
+  name: string | null
+  status: string
+}
+
+export interface AuthResponse {
+  access_token: string
+  user: AuthUser
+}
+
+function storeAccessToken(token: string | null) {
+  accessToken = token
+  if (token) {
+    sessionStorage.setItem('athleteos_access_token', token)
+  } else {
+    sessionStorage.removeItem('athleteos_access_token')
+  }
+}
+
+export async function registerUser(data: {
+  email: string
+  password: string
+  name?: string
+}): Promise<AuthResponse> {
+  const result = await request<AuthResponse>(
+    '/auth/register',
+    { method: 'POST', body: JSON.stringify(data) },
+    false,
+  )
+  storeAccessToken(result.access_token)
+  return result
+}
+
+export async function loginUser(data: {
+  email: string
+  password: string
+}): Promise<AuthResponse> {
+  const result = await request<AuthResponse>(
+    '/auth/login',
+    { method: 'POST', body: JSON.stringify(data) },
+    false,
+  )
+  storeAccessToken(result.access_token)
+  return result
+}
+
+export async function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise
+  refreshPromise = fetch(`${API_BASE_URL}/auth/refresh`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  })
+    .then(async (response) => {
+      if (!response.ok) return null
+      const result = (await response.json()) as AuthResponse
+      storeAccessToken(result.access_token)
+      return result.access_token
+    })
+    .catch(() => null)
+    .finally(() => {
+      refreshPromise = null
+    })
+  return refreshPromise
+}
+
+export async function getCurrentUser(): Promise<AuthUser> {
+  return request<AuthUser>('/auth/me')
+}
+
+export async function logoutUser(): Promise<void> {
+  try {
+    await request('/auth/logout', { method: 'POST', body: '{}' }, false)
+  } finally {
+    storeAccessToken(null)
   }
 }
 

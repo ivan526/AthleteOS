@@ -62,9 +62,7 @@ export class DailyStateBuilderService {
       },
     });
 
-    if (!user || user.connectedAccounts.length === 0) {
-      throw new Error('用户未连接训练数据源');
-    }
+    if (!user) throw new Error('用户不存在');
 
     const activities = user.connectedAccounts
       .flatMap((account) => account.activities)

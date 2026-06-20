@@ -16,7 +16,11 @@ describe('LlmCoachService', () => {
       findFirst: jest.fn(),
     },
   } as any;
-  const service = new LlmCoachService(prisma, new AiCoachGuardrailService());
+  const service = new LlmCoachService(
+    prisma,
+    new AiCoachGuardrailService(),
+    { decrypt: (value: string) => value } as any,
+  );
 
   beforeEach(() => {
     jest.clearAllMocks();

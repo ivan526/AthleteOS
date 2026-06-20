@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { resolve } from 'path';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { CredentialEncryptionService } from '../../shared/security/credential-encryption.service';
 import { IntervalsApiService, IntervalsActivity, IntervalsWellness } from './intervals-api.service';
 import {
   GarminActivityRecord,
@@ -17,6 +18,7 @@ export class SyncService {
     private prisma: PrismaService,
     private intervalsApi: IntervalsApiService,
     private garminApi: GarminApiService,
+    private credentials: CredentialEncryptionService,
   ) {}
 
   async syncDailyData(userId: string): Promise<DailySyncResult> {
@@ -143,13 +145,13 @@ export class SyncService {
       // 获取活动数据
       const activities = await this.intervalsApi.getActivities(
         connectedAccount.athleteId,
-        connectedAccount.apiKey,
+        this.credentials.decrypt(connectedAccount.apiKey),
         startDate,
         endDate,
       );
       const wellness = await this.intervalsApi.getWellness(
         connectedAccount.athleteId,
-        connectedAccount.apiKey,
+        this.credentials.decrypt(connectedAccount.apiKey),
         startDate,
         endDate,
       );
@@ -287,7 +289,7 @@ export class SyncService {
 
       const result = await this.garminApi.getData({
         email: connectedAccount.athleteId,
-        password: connectedAccount.apiKey,
+        password: this.credentials.decrypt(connectedAccount.apiKey),
         oldest,
         newest,
         tokenStore: this.getGarminTokenStore(userId, connectedAccount.authDomain),
@@ -1064,11 +1066,11 @@ export class SyncService {
 
     return {
       intervals_athlete_id: connectedAccount?.athleteId ?? '',
-      has_credentials: Boolean(connectedAccount?.apiKey && connectedAccount.apiKey !== 'demo'),
+      has_credentials: this.credentials.isConfigured(connectedAccount?.apiKey),
       last_sync_at: connectedAccount?.lastSyncAt ?? null,
       garmin_email: garminAccount?.athleteId ?? '',
       garmin_auth_domain: garminAccount?.authDomain ?? 'garmin.com',
-      has_garmin_credentials: Boolean(garminAccount?.apiKey && garminAccount.apiKey !== 'demo'),
+      has_garmin_credentials: this.credentials.isConfigured(garminAccount?.apiKey),
       garmin_last_sync_at: garminAccount?.lastSyncAt ?? null,
       garmin_sync_status: garminAccount?.syncStatus ?? 'not_connected',
       garmin_sync_message: garminAccount?.syncMessage ?? '未配置 Garmin Connect',
@@ -1081,7 +1083,7 @@ export class SyncService {
       llm_model: llmSetting?.model ?? '',
       llm_base_url: llmSetting?.baseUrl ?? '',
       llm_enabled: llmSetting?.enabled ?? false,
-      has_llm_api_key: Boolean(llmSetting?.apiKey),
+      has_llm_api_key: this.credentials.isConfigured(llmSetting?.apiKey),
       primary_sport: profile?.primarySport ?? 'running',
       weekly_available_days: profile?.weeklyAvailableDays ?? 5,
       preferred_sports: profile?.preferredSports ?? ['running', 'cycling'],
@@ -1153,7 +1155,9 @@ export class SyncService {
         },
         update: {
           athleteId: data.intervals_athlete_id ?? existingAccount?.athleteId ?? '',
-          apiKey: data.intervals_api_key ?? existingAccount?.apiKey ?? '',
+          apiKey: data.intervals_api_key
+            ? this.credentials.encrypt(data.intervals_api_key)!
+            : existingAccount?.apiKey ?? '',
           syncStatus: 'connected',
           syncMessage: '已保存 Intervals.icu 凭证',
         },
@@ -1161,7 +1165,7 @@ export class SyncService {
           userId,
           provider: 'intervals.icu',
           athleteId: data.intervals_athlete_id ?? '',
-          apiKey: data.intervals_api_key ?? '',
+          apiKey: this.credentials.encrypt(data.intervals_api_key) ?? '',
           syncStatus: 'connected',
           syncMessage: '已保存 Intervals.icu 凭证',
         },
@@ -1179,7 +1183,9 @@ export class SyncService {
         },
         update: {
           athleteId: data.garmin_email ?? existingGarminAccount?.athleteId ?? '',
-          apiKey: data.garmin_password ?? existingGarminAccount?.apiKey ?? '',
+          apiKey: data.garmin_password
+            ? this.credentials.encrypt(data.garmin_password)!
+            : existingGarminAccount?.apiKey ?? '',
           authDomain: garminAuthDomain,
           syncStatus: 'connected',
           syncMessage: '已保存 Garmin Connect 凭证',
@@ -1188,7 +1194,7 @@ export class SyncService {
           userId,
           provider: 'garmin.connect',
           athleteId: data.garmin_email ?? '',
-          apiKey: data.garmin_password ?? '',
+          apiKey: this.credentials.encrypt(data.garmin_password) ?? '',
           authDomain: garminAuthDomain,
           syncStatus: 'connected',
           syncMessage: '已保存 Garmin Connect 凭证',
@@ -1210,7 +1216,9 @@ export class SyncService {
           provider: data.llm_provider ?? existingLlmSetting?.provider ?? 'openai-compatible',
           model: data.llm_model ?? existingLlmSetting?.model ?? null,
           baseUrl: data.llm_base_url ?? existingLlmSetting?.baseUrl ?? null,
-          apiKey: data.llm_api_key ?? existingLlmSetting?.apiKey ?? null,
+          apiKey: data.llm_api_key
+            ? this.credentials.encrypt(data.llm_api_key)
+            : existingLlmSetting?.apiKey ?? null,
           enabled: data.llm_enabled ?? existingLlmSetting?.enabled ?? false,
         },
         create: {
@@ -1218,7 +1226,7 @@ export class SyncService {
           provider: data.llm_provider ?? 'openai-compatible',
           model: data.llm_model ?? null,
           baseUrl: data.llm_base_url ?? null,
-          apiKey: data.llm_api_key ?? null,
+          apiKey: this.credentials.encrypt(data.llm_api_key),
           enabled: data.llm_enabled ?? false,
         },
       });

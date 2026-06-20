@@ -1,4 +1,5 @@
-import { Controller, Get, Post } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Post } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { MockDataService } from './modules/sync/mock-data.service';
 import { DailyStateBuilderService } from './modules/athlete/daily-state-builder.service';
 import { AcwrEngineService } from './modules/athlete/acwr-engine.service';
@@ -6,6 +7,7 @@ import { MonotonyEngineService } from './modules/athlete/monotony-engine.service
 import { HardSafetyRulesService } from './modules/athlete/hard-safety-rules.service';
 import { WorkoutGeneratorService } from './modules/training/workout-generator.service';
 import { Activity } from '@prisma/client';
+import { Public } from './modules/auth/public.decorator';
 
 /**
  * 测试用控制器，仅用于开发阶段
@@ -19,6 +21,7 @@ export class TestController {
     private monotonyEngine: MonotonyEngineService,
     private hardSafetyRules: HardSafetyRulesService,
     private workoutGenerator: WorkoutGeneratorService,
+    private config: ConfigService,
   ) {}
 
   /**
@@ -26,6 +29,7 @@ export class TestController {
    */
   @Post('generate-mock')
   async generateMockData() {
+    this.assertDevelopment();
     const result = await this.mockDataService.generateFullMockData();
     return result;
   }
@@ -35,6 +39,7 @@ export class TestController {
    */
   @Get('build-daily-state')
   async buildDailyState() {
+    this.assertDevelopment();
     // 使用测试用户ID
     const testUserId = 'b23d32aa-870a-449e-8572-b1fccd8c00e0';
     const state = await this.dailyStateBuilder.buildDailyState(testUserId);
@@ -57,7 +62,9 @@ export class TestController {
   }
 
   @Get('prd-acceptance')
+  @Public()
   async runPrdAcceptance() {
+    this.assertDevelopment();
     const referenceDate = new Date('2026-06-17T00:00:00.000Z');
     const normalState = this.createState({
       score: 76,
@@ -280,6 +287,12 @@ export class TestController {
       subscores: {},
       summary: '',
     };
+  }
+
+  private assertDevelopment(): void {
+    if (this.config.get('NODE_ENV') === 'production') {
+      throw new NotFoundException();
+    }
   }
 
   private createRisk(level: 'low' | 'moderate' | 'elevated' | 'high_caution', score: number): any {

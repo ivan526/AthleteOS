@@ -114,4 +114,13 @@ describe('TrainingController activity presentation', () => {
       { sport: 'swimming', label: '游泳' },
     ]);
   });
+
+  it('always scopes activity queries to the authenticated user', () => {
+    const where = (controller as any).realActivityWhere('user-a', {
+      id: 'activity-b',
+    });
+
+    expect(where.connectedAccount).toEqual({ userId: 'user-a' });
+    expect(where.id).toBe('activity-b');
+  });
 });

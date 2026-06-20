@@ -19,19 +19,28 @@ import AboutPage from './pages/settings/About'
 import ActivityDetail from './pages/ActivityDetail'
 import FeedbackHistory from './pages/FeedbackHistory'
 import { syncDaily } from './lib/api'
+import Login from './pages/Login'
+import Register from './pages/Register'
+import { useAuth } from './auth/AuthContext'
 
-function App() {
+function ProtectedApplication() {
+  const { user, loading } = useAuth()
   const [bootstrapping, setBootstrapping] = useState(true)
 
   useEffect(() => {
+    if (!user) {
+      setBootstrapping(false)
+      return
+    }
+    setBootstrapping(true)
     syncDaily()
       .catch((error) => {
         console.warn('每日自动同步失败，将使用最近一次数据', error)
       })
       .finally(() => setBootstrapping(false))
-  }, [])
+  }, [user])
 
-  if (bootstrapping) {
+  if (loading || (user && bootstrapping)) {
     return (
       <div className="min-h-screen bg-background-page flex items-center justify-center text-primary">
         正在更新今日数据...
@@ -39,10 +48,11 @@ function App() {
     )
   }
 
+  if (!user) return <Navigate to="/login" replace />
+
   return (
-    <Router>
-      <div className="min-h-screen bg-background-page">
-        <Routes>
+    <div className="min-h-screen bg-background-page">
+      <Routes>
           <Route path="/" element={<Navigate to="/today" replace />} />
           <Route path="/today" element={<Today />} />
           <Route path="/connect/intervals" element={<ConnectIntervals />} />
@@ -62,8 +72,19 @@ function App() {
           <Route path="/settings/about" element={<AboutPage />} />
           <Route path="/activity/:id" element={<ActivityDetail />} />
           <Route path="/feedback" element={<FeedbackHistory />} />
-        </Routes>
-      </div>
+      </Routes>
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/*" element={<ProtectedApplication />} />
+      </Routes>
     </Router>
   )
 }

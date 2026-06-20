@@ -7,6 +7,8 @@ import { PrismaModule } from './shared/prisma/prisma.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { AthleteModule } from './modules/athlete/athlete.module';
 import { TrainingModule } from './modules/training/training.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { SecurityModule } from './shared/security/security.module';
 
 @Module({
   imports: [
@@ -14,6 +16,8 @@ import { TrainingModule } from './modules/training/training.module';
       isGlobal: true,
     }),
     PrismaModule,
+    AuthModule,
+    SecurityModule,
     SyncModule,
     AthleteModule,
     TrainingModule,

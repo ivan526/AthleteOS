@@ -10,7 +10,16 @@ describe('SyncService daily sync', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new SyncService(prisma as any, {} as any, {} as any);
+    service = new SyncService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {
+        decrypt: (value: string) => value,
+        encrypt: (value: string) => value,
+        isConfigured: Boolean,
+      } as any,
+    );
   });
 
   it('skips sources already synchronized today', async () => {

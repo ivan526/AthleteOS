@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { CredentialEncryptionService } from '../../shared/security/credential-encryption.service';
 import { AiCoachGuardrailService } from './ai-coach-guardrail.service';
 
 export type AiCoachInteractionType =
@@ -40,6 +41,7 @@ export class LlmCoachService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly guardrail: AiCoachGuardrailService,
+    private readonly credentials: CredentialEncryptionService,
   ) {}
 
   polishTrainingExplanation(params: {
@@ -315,7 +317,13 @@ export class LlmCoachService {
         timeout: 30_000,
         headers: {
           'Content-Type': 'application/json',
-          ...(setting.apiKey ? { Authorization: `Bearer ${setting.apiKey}` } : {}),
+          ...(setting.apiKey
+            ? {
+                Authorization: `Bearer ${this.credentials.decrypt(
+                  setting.apiKey,
+                )}`,
+              }
+            : {}),
         },
       },
     );

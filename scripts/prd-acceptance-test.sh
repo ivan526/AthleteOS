@@ -5,10 +5,16 @@ BASE_URL="${BASE_URL:-http://127.0.0.1:3007}"
 
 node <<'NODE'
 const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:3007';
+const acceptanceEmail = `acceptance-${Date.now()}@athleteos.local`;
+const acceptancePassword = 'AcceptancePass2026';
+let accessToken = '';
 
 async function request(path, options) {
   const response = await fetch(`${baseUrl}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
     ...options,
   });
   const text = await response.text();
@@ -29,6 +35,16 @@ function assert(condition, message) {
 }
 
 const results = [];
+
+const registration = await request('/api/auth/register', {
+  method: 'POST',
+  body: JSON.stringify({
+    email: acceptanceEmail,
+    password: acceptancePassword,
+    name: 'PRD Acceptance',
+  }),
+});
+accessToken = registration.access_token;
 
 async function scenario(id, name, fn) {
   try {
@@ -129,6 +145,10 @@ await scenario('AI Coach P0', 'AI Coach 边界、问答和分析契约', async (
 });
 
 const failed = results.filter((item) => !item.passed);
+const { PrismaClient } = await import('./backend/node_modules/@prisma/client/default.js');
+const prisma = new PrismaClient();
+await prisma.user.deleteMany({ where: { email: acceptanceEmail } });
+await prisma.$disconnect();
 console.log(JSON.stringify({ passed: failed.length === 0, results }, null, 2));
 if (failed.length) process.exit(1);
 NODE
