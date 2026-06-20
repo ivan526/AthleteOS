@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import Today from './pages/Today'
 import History from './pages/History'
@@ -17,8 +18,27 @@ import UnitsSettings from './pages/settings/Units'
 import AboutPage from './pages/settings/About'
 import ActivityDetail from './pages/ActivityDetail'
 import FeedbackHistory from './pages/FeedbackHistory'
+import { syncDaily } from './lib/api'
 
 function App() {
+  const [bootstrapping, setBootstrapping] = useState(true)
+
+  useEffect(() => {
+    syncDaily()
+      .catch((error) => {
+        console.warn('每日自动同步失败，将使用最近一次数据', error)
+      })
+      .finally(() => setBootstrapping(false))
+  }, [])
+
+  if (bootstrapping) {
+    return (
+      <div className="min-h-screen bg-background-page flex items-center justify-center text-primary">
+        正在更新今日数据...
+      </div>
+    )
+  }
+
   return (
     <Router>
       <div className="min-h-screen bg-background-page">

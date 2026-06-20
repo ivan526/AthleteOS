@@ -82,7 +82,9 @@ export class WorkoutGeneratorService {
         intensity: 'easy',
         tssPerMinute: 0.5,
         structure: {
-          mainSet: '低强度骑行，保持轻松踩踏',
+          warmup: '5分钟轻松踩踏，逐步提高踏频',
+          mainSet: '低强度骑行，保持轻松踩踏和顺畅圆周发力',
+          cooldown: '5分钟低阻力放松骑',
         },
       },
       easy_ride: {
@@ -90,7 +92,9 @@ export class WorkoutGeneratorService {
         intensity: 'easy',
         tssPerMinute: 0.7,
         structure: {
-          mainSet: '有氧骑行，保持平稳呼吸',
+          warmup: '10分钟轻松踩踏',
+          mainSet: '有氧骑行，保持平稳呼吸与舒适踏频',
+          cooldown: '5分钟低阻力放松骑',
         },
       },
       endurance_ride: {
@@ -98,7 +102,9 @@ export class WorkoutGeneratorService {
         intensity: 'moderate',
         tssPerMinute: 0.9,
         structure: {
-          mainSet: '稳定输出，保持有氧运动强度',
+          warmup: '10分钟由轻松逐步进入有氧强度',
+          mainSet: '稳定输出，保持有氧耐力区间，避免频繁冲刺',
+          cooldown: '10分钟轻松骑',
         },
       },
       tempo_ride: {
@@ -106,7 +112,9 @@ export class WorkoutGeneratorService {
         intensity: 'moderate',
         tssPerMinute: 1.2,
         structure: {
-          mainSet: '阈值强度骑行，提升耐力',
+          warmup: '15分钟热身，加入3次短加速',
+          mainSet: '2组15分钟节奏强度骑行，组间轻松骑5分钟',
+          cooldown: '10分钟轻松骑',
         },
       },
       interval_ride: {
@@ -114,7 +122,61 @@ export class WorkoutGeneratorService {
         intensity: 'high',
         tssPerMinute: 1.4,
         structure: {
-          mainSet: '高强度间歇训练，组间充分休息',
+          warmup: '15分钟热身，加入高踏频激活',
+          mainSet: '5组3分钟高强度骑行，组间轻松骑3分钟',
+          cooldown: '10分钟轻松骑',
+        },
+      },
+    },
+    swimming: {
+      recovery_swim: {
+        title: '恢复游',
+        intensity: 'easy',
+        tssPerMinute: 0.4,
+        structure: {
+          warmup: '200米轻松游，专注水感',
+          mainSet: '轻松连续游，保持动作舒展和呼吸稳定',
+          cooldown: '100米放松游',
+        },
+      },
+      easy_swim: {
+        title: '轻松游',
+        intensity: 'easy',
+        tssPerMinute: 0.6,
+        structure: {
+          warmup: '300米轻松游与技术练习',
+          mainSet: '均匀完成有氧游，保持动作完整',
+          cooldown: '200米放松游',
+        },
+      },
+      endurance_swim: {
+        title: '耐力游',
+        intensity: 'moderate',
+        tssPerMinute: 0.8,
+        structure: {
+          warmup: '400米轻松游，加入划水技术练习',
+          mainSet: '4组400米有氧游，组间休息45秒',
+          cooldown: '200米放松游',
+        },
+      },
+      tempo_swim: {
+        title: '节奏游',
+        intensity: 'moderate',
+        tssPerMinute: 1.0,
+        structure: {
+          warmup: '400米热身，加入4组50米渐进',
+          mainSet: '8组100米稳定节奏游，组间休息20秒',
+          cooldown: '200米放松游',
+        },
+      },
+      interval_swim: {
+        title: '间歇游',
+        intensity: 'high',
+        tssPerMinute: 1.2,
+        structure: {
+          warmup: '500米热身与技术练习',
+          mainSet: '12组50米高强度游，组间休息30秒',
+          cooldown: '300米放松游',
         },
       },
     },
@@ -124,7 +186,9 @@ export class WorkoutGeneratorService {
         intensity: 'easy',
         tssPerMinute: 0.3,
         structure: {
-          mainSet: '全身关节活动和动态拉伸',
+          warmup: '5分钟轻度活动提升体温',
+          mainSet: '全身关节活动、动态拉伸与呼吸控制',
+          cooldown: '5分钟轻柔静态拉伸',
         },
       },
       core_strength: {
@@ -132,7 +196,9 @@ export class WorkoutGeneratorService {
         intensity: 'moderate',
         tssPerMinute: 0.6,
         structure: {
-          mainSet: '核心肌群训练，包括平板支撑、卷腹等',
+          warmup: '8分钟动态热身和核心激活',
+          mainSet: '3轮核心稳定训练，包括平板支撑、死虫和侧桥',
+          cooldown: '5分钟腰背与髋部放松',
         },
       },
       light_strength: {
@@ -140,7 +206,9 @@ export class WorkoutGeneratorService {
         intensity: 'moderate',
         tssPerMinute: 0.7,
         structure: {
-          mainSet: '下肢和上身轻重量力量训练',
+          warmup: '10分钟动态热身与动作准备',
+          mainSet: '全身轻重量力量训练，动作质量优先，保留3次余力',
+          cooldown: '5分钟拉伸与呼吸恢复',
         },
       },
     },
@@ -242,6 +310,7 @@ export class WorkoutGeneratorService {
     if (dayType === 'recovery') {
       if (sport === 'running') return 'recovery_run';
       if (sport === 'cycling') return 'recovery_ride';
+      if (sport === 'swimming') return 'recovery_swim';
       return 'mobility';
     }
 
@@ -249,6 +318,7 @@ export class WorkoutGeneratorService {
     if (dayType === 'easy') {
       if (sport === 'running') return 'easy_run';
       if (sport === 'cycling') return 'easy_ride';
+      if (sport === 'swimming') return 'easy_swim';
       return 'light_strength';
     }
 
@@ -258,25 +328,32 @@ export class WorkoutGeneratorService {
       if ((dataLevel === 'D' || dataLevel === 'C') && allowedIntensities.includes('moderate')) {
         if (sport === 'running') return 'steady_run';
         if (sport === 'cycling') return 'endurance_ride';
+        if (sport === 'swimming') return 'endurance_swim';
+        return 'core_strength';
       }
 
       if (allowedIntensities.includes('moderate')) {
         const useFirstVariant = this.selectDailyVariant(`${dateId ?? ''}:${sport}`);
         if (sport === 'running') return useFirstVariant ? 'steady_run' : 'tempo_run';
         if (sport === 'cycling') return useFirstVariant ? 'endurance_ride' : 'tempo_ride';
+        if (sport === 'swimming') return useFirstVariant ? 'endurance_swim' : 'tempo_swim';
+        return useFirstVariant ? 'core_strength' : 'light_strength';
       }
-      return sport === 'running' ? 'easy_run' : 'easy_ride';
+      return this.getEasyWorkoutType(sport);
     }
 
     // 高强度日
     if (dayType === 'hard' && allowedIntensities.includes('high') && dataLevel === 'A') {
       if (sport === 'running') return 'interval_run';
       if (sport === 'cycling') return 'interval_ride';
+      if (sport === 'swimming') return 'interval_swim';
+      return 'core_strength';
     }
 
     // 默认选择
     if (sport === 'running') return 'easy_run';
     if (sport === 'cycling') return 'easy_ride';
+    if (sport === 'swimming') return 'easy_swim';
     return 'mobility';
   }
 
@@ -332,6 +409,9 @@ export class WorkoutGeneratorService {
     if (sport === 'cycling' && this.workoutTemplates.cycling[workoutType as keyof typeof this.workoutTemplates.cycling]) {
       return this.workoutTemplates.cycling[workoutType as keyof typeof this.workoutTemplates.cycling];
     }
+    if (sport === 'swimming' && this.workoutTemplates.swimming[workoutType as keyof typeof this.workoutTemplates.swimming]) {
+      return this.workoutTemplates.swimming[workoutType as keyof typeof this.workoutTemplates.swimming];
+    }
     if (this.workoutTemplates.strength[workoutType as keyof typeof this.workoutTemplates.strength]) {
       return this.workoutTemplates.strength[workoutType as keyof typeof this.workoutTemplates.strength];
     }
@@ -359,12 +439,12 @@ export class WorkoutGeneratorService {
     switch (feedbackType) {
       case 'too_tired':
         // 降低强度
-        adjusted.type = original.sport === 'running' ? 'easy_run' : 'easy_ride';
+        adjusted.type = this.getEasyWorkoutType(original.sport);
         adjusted.structure = this.getTemplate(adjusted.type, original.sport).structure;
         adjusted.intensity = 'easy';
         adjusted.durationMinutes = Math.round(original.durationMinutes * 0.7);
         adjusted.expectedTss = Math.round(original.expectedTss * 0.6);
-        adjusted.title = original.sport === 'running' ? '轻松跑' : '轻松骑';
+        adjusted.title = this.getTemplate(adjusted.type, original.sport).title;
         break;
 
       case 'not_enough_time':
@@ -392,19 +472,29 @@ export class WorkoutGeneratorService {
 
       case 'change_sport':
         // 切换运动类型
-        if (newSport) {
+        if (
+          newSport &&
+          ['running', 'cycling', 'swimming', 'strength'].includes(newSport)
+        ) {
+          const targetType = this.getEquivalentWorkoutType(original.intensity, newSport);
+          const targetTemplate = this.getTemplate(targetType, newSport);
           adjusted.sport = newSport;
-          adjusted.type = newSport === 'running' ? 'easy_run' : 'easy_ride';
-          adjusted.title = newSport === 'running' ? '轻松跑' : '轻松骑';
+          adjusted.type = targetType;
+          adjusted.title = targetTemplate.title;
+          adjusted.intensity = targetTemplate.intensity as Intensity;
+          adjusted.structure = targetTemplate.structure;
+          adjusted.expectedTss = Math.round(
+            adjusted.durationMinutes * targetTemplate.tssPerMinute,
+          );
         }
         break;
 
       case 'prefer_easy':
         // 改为轻松训练
-        adjusted.type = original.sport === 'running' ? 'easy_run' : 'easy_ride';
+        adjusted.type = this.getEasyWorkoutType(original.sport);
         adjusted.structure = this.getTemplate(adjusted.type, original.sport).structure;
         adjusted.intensity = 'easy';
-        adjusted.title = original.sport === 'running' ? '轻松跑' : '轻松骑';
+        adjusted.title = this.getTemplate(adjusted.type, original.sport).title;
         adjusted.expectedTss = Math.round(original.expectedTss * 0.7);
         break;
 
@@ -420,5 +510,36 @@ export class WorkoutGeneratorService {
     }
 
     return adjusted;
+  }
+
+  private getEasyWorkoutType(sport: Sport): WorkoutType {
+    if (sport === 'running') return 'easy_run';
+    if (sport === 'cycling') return 'easy_ride';
+    if (sport === 'swimming') return 'easy_swim';
+    return 'mobility';
+  }
+
+  private getEquivalentWorkoutType(
+    intensity: Intensity,
+    sport: Sport,
+  ): WorkoutType {
+    if (intensity === 'high') {
+      if (sport === 'running') return 'interval_run';
+      if (sport === 'cycling') return 'interval_ride';
+      if (sport === 'swimming') return 'interval_swim';
+      return 'core_strength';
+    }
+
+    if (intensity === 'moderate') {
+      if (sport === 'running') return 'steady_run';
+      if (sport === 'cycling') return 'endurance_ride';
+      if (sport === 'swimming') return 'endurance_swim';
+      return 'light_strength';
+    }
+
+    if (sport === 'running') return 'recovery_run';
+    if (sport === 'cycling') return 'recovery_ride';
+    if (sport === 'swimming') return 'recovery_swim';
+    return 'mobility';
   }
 }

@@ -99,6 +99,20 @@ export class TestController {
         action: '禁止高强度训练，建议轻松日或恢复日',
       },
     ]);
+    const tiredWorkout = this.workoutGenerator.adjustWorkout(
+      normalWorkout,
+      'too_tired',
+    );
+    const painWorkout = this.workoutGenerator.adjustWorkout(
+      normalWorkout,
+      'pain_or_discomfort',
+    );
+    const cyclingWorkout = this.workoutGenerator.adjustWorkout(
+      normalWorkout,
+      'change_sport',
+      undefined,
+      'cycling',
+    );
 
     const scenarios = [
       {
@@ -160,6 +174,33 @@ export class TestController {
           !aiSafetyAllowedTypes.includes('interval_run') &&
           !aiSafetyAllowedTypes.includes('tempo_run'),
         details: { allowedTypes: aiSafetyAllowedTypes },
+      },
+      {
+        id: '25.6',
+        name: '用户反馈：太累了',
+        passed:
+          tiredWorkout.intensity === 'easy' &&
+          tiredWorkout.durationMinutes < normalWorkout.durationMinutes &&
+          tiredWorkout.expectedTss < normalWorkout.expectedTss,
+        details: tiredWorkout,
+      },
+      {
+        id: '25.7/24.2',
+        name: '用户反馈：疼痛或不适',
+        passed:
+          painWorkout.type === 'mobility' &&
+          painWorkout.sport === 'strength' &&
+          painWorkout.intensity === 'easy',
+        details: painWorkout,
+      },
+      {
+        id: 'multi-sport',
+        name: '今日建议支持切换骑行',
+        passed:
+          cyclingWorkout.sport === 'cycling' &&
+          ['endurance_ride', 'tempo_ride'].includes(cyclingWorkout.type) &&
+          cyclingWorkout.title.includes('骑'),
+        details: cyclingWorkout,
       },
     ];
 

@@ -38,7 +38,6 @@ export class DailyStateBuilderService {
       where: { id: userId },
       include: {
         connectedAccounts: {
-          where: { provider: 'intervals.icu' },
           include: {
             activities: {
               where: {
@@ -64,11 +63,12 @@ export class DailyStateBuilderService {
     });
 
     if (!user || user.connectedAccounts.length === 0) {
-      throw new Error('用户未连接Intervals.icu账户');
+      throw new Error('用户未连接训练数据源');
     }
 
-    const connectedAccount = user.connectedAccounts[0];
-    const activities = connectedAccount.activities;
+    const activities = user.connectedAccounts
+      .flatMap((account) => account.activities)
+      .sort((a, b) => b.startTime.getTime() - a.startTime.getTime());
     const wellnessStates = user.dailyAthleteStates;
     const latestWellness = wellnessStates[0];
     const latestSleepScore = this.latestNonNull(wellnessStates, 'sleepScore');
@@ -94,9 +94,10 @@ export class DailyStateBuilderService {
 
     // 3. 计算CTL/ATL/Form
     const calculatedLoad = this.calculateFitnessFatigueForm(activities, date);
-    const fitness = latestWellness?.fitness ?? calculatedLoad.fitness;
-    const fatigue = latestWellness?.fatigue ?? calculatedLoad.fatigue;
-    const form = latestWellness?.form ?? calculatedLoad.form;
+    const hasActivityLoad = activities.some((activity) => activity.tss != null);
+    const fitness = hasActivityLoad ? calculatedLoad.fitness : latestWellness?.fitness ?? calculatedLoad.fitness;
+    const fatigue = hasActivityLoad ? calculatedLoad.fatigue : latestWellness?.fatigue ?? calculatedLoad.fatigue;
+    const form = hasActivityLoad ? calculatedLoad.form : latestWellness?.form ?? calculatedLoad.form;
 
     // 4. 计算ACWR
     const acwr = this.acwrEngine.calculate(activities, date);

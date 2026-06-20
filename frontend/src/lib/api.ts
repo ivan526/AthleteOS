@@ -73,6 +73,10 @@ export interface TodayResponse {
   training_capacity: TrainingCapacity
   training_risk: TrainingRisk
   recommendation: WorkoutRecommendation
+  sport_options: Array<{
+    sport: string
+    label: string
+  }>
   explanation: Explanation
   feedback_options: string[]
   disclaimer: string
@@ -204,6 +208,17 @@ export function syncGarmin(fullSync: boolean = false, mfaCode?: string): Promise
   })
 }
 
+export function syncDaily(): Promise<any> {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 8000)
+  return request('/sync/daily', {
+    method: 'POST',
+    signal: controller.signal,
+  }).finally(() => {
+    window.clearTimeout(timeout)
+  })
+}
+
 /**
  * 获取同步状态
  */
@@ -221,6 +236,7 @@ export interface UserSettings {
   garmin_last_sync_at: string | null
   garmin_sync_status: string
   garmin_sync_message: string
+  primary_data_source: string
   llm_provider: string
   llm_model: string
   llm_base_url: string
@@ -251,6 +267,7 @@ export function updateSettings(data: {
   llm_enabled?: boolean
   primary_sport?: string
   weekly_available_days?: number
+  preferred_sports?: string[]
 }): Promise<UserSettings> {
   return request<UserSettings>('/settings', {
     method: 'PUT',
@@ -285,6 +302,33 @@ export interface Activity {
   notes?: string
 }
 
+export interface AdvancedActivityMetric {
+  key: string
+  group: string
+  label: string
+  value: string
+  note?: string
+}
+
+export interface ActivityCoachReview {
+  summary: string
+  trainingEffect: string
+  benefits: string[]
+  cautions: string[]
+  recovery: string[]
+  comparison: string
+  dataQuality: 'high' | 'medium' | 'limited'
+  usedLlm: boolean
+  safetyFiltered: boolean
+  fallbackUsed: boolean
+}
+
+export interface ActivityDetailResponse extends Activity {
+  advancedMetrics: AdvancedActivityMetric[]
+  dataSources: string[]
+  coachReview: ActivityCoachReview
+}
+
 export function getActivities(page: number = 1, limit: number = 30): Promise<Activity[]> {
   return request<Activity[]>(`/activities?page=${page}&limit=${limit}`)
 }
@@ -292,8 +336,8 @@ export function getActivities(page: number = 1, limit: number = 30): Promise<Act
 /**
  * 获取活动详情
  */
-export function getActivityDetail(id: string): Promise<Activity> {
-  return request<Activity>(`/activities/${id}`)
+export function getActivityDetail(id: string): Promise<ActivityDetailResponse> {
+  return request<ActivityDetailResponse>(`/activities/${id}`)
 }
 
 export interface HistorySummary {

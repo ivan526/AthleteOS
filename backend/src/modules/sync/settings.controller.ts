@@ -31,6 +31,7 @@ export class SettingsController {
       llm_enabled?: boolean;
       primary_sport?: string;
       weekly_available_days?: number;
+      preferred_sports?: string[];
     },
   ) {
     const userId = await this.currentUser.getUserId();

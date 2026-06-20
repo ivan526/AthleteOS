@@ -38,6 +38,13 @@ export type CyclingWorkoutType =
   | 'interval_ride'
   | 'indoor_easy_ride';
 
+export type SwimmingWorkoutType =
+  | 'recovery_swim'
+  | 'easy_swim'
+  | 'endurance_swim'
+  | 'tempo_swim'
+  | 'interval_swim';
+
 /**
  * 力量训练类型
  */
@@ -46,7 +53,11 @@ export type StrengthWorkoutType = 'mobility' | 'core_strength' | 'light_strength
 /**
  * 所有训练类型
  */
-export type WorkoutType = RunningWorkoutType | CyclingWorkoutType | StrengthWorkoutType;
+export type WorkoutType =
+  | RunningWorkoutType
+  | CyclingWorkoutType
+  | SwimmingWorkoutType
+  | StrengthWorkoutType;
 
 /**
  * 运动类型

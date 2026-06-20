@@ -14,12 +14,48 @@ export interface GarminHrvRecord {
   error?: string;
 }
 
-export interface GarminHrvResult {
+export interface GarminActivityRecord {
+  id: string;
+  name?: string;
+  type?: string;
+  startTime: string | number;
+  durationSeconds?: number;
+  distanceMeters?: number;
+  avgHr?: number;
+  maxHr?: number;
+  avgPower?: number;
+  normalizedPower?: number;
+  avgCadence?: number;
+  avgSpeed?: number;
+  maxSpeed?: number;
+  elevationGain?: number;
+  calories?: number;
+  tss?: number;
+  trainingLoad?: number;
+  aerobicTrainingEffect?: number;
+  anaerobicTrainingEffect?: number;
+  raw?: Record<string, unknown>;
+}
+
+export interface GarminWellnessRecord extends GarminHrvRecord {
+  sleepScore?: number;
+  sleepSeconds?: number;
+  sleepQuality?: number;
+  restingHr?: number;
+  readiness?: number;
+  heartRateRaw?: Record<string, unknown>;
+  readinessRaw?: unknown[];
+}
+
+export interface GarminSyncResult {
   success: boolean;
+  activities: GarminActivityRecord[];
+  activityCount: number;
   fetchedDays: number;
   responseDays: number;
   hrvDays: number;
   records: GarminHrvRecord[];
+  wellnessRecords: GarminWellnessRecord[];
   error?: string;
   details?: string;
 }
@@ -28,7 +64,7 @@ export interface GarminHrvResult {
 export class GarminApiService {
   private readonly logger = new Logger(GarminApiService.name);
 
-  async getHrvData(params: {
+  async getData(params: {
     email: string;
     password: string;
     oldest: Date;
@@ -36,7 +72,7 @@ export class GarminApiService {
     tokenStore: string;
     authDomain: string;
     mfaCode?: string;
-  }): Promise<GarminHrvResult> {
+  }): Promise<GarminSyncResult> {
     const scriptPath = this.resolveScriptPath();
     const pythonBin = process.env.PYTHON_BIN ?? 'python3';
     const env: NodeJS.ProcessEnv = {
@@ -68,7 +104,7 @@ export class GarminApiService {
       child.on('close', (code) => {
         const output = stdout.trim();
         try {
-          const parsed = JSON.parse(output) as GarminHrvResult;
+          const parsed = JSON.parse(output) as GarminSyncResult;
           if (!parsed.success) {
             this.logger.warn(`Garmin HRV sync failed: ${parsed.error ?? stderr}`);
           }

@@ -35,6 +35,10 @@ export class TrainingController {
       const state = await this.dailyStateBuilder.buildDailyState(userId, today);
       const decision = await this.decisionEngine.generateDailyDecision(userId, state, today);
       const savedRecommendation = await this.findRecommendationForDate(userId, today);
+      const profile = await this.prisma.athleteProfile.findUnique({
+        where: { userId },
+        select: { primarySport: true, preferredSports: true },
+      });
       const useSavedRecommendation = Boolean(
         savedRecommendation && ['adjusted', 'completed', 'skipped'].includes(savedRecommendation.status),
       );
@@ -74,6 +78,10 @@ export class TrainingController {
           intensity: effectiveRecommendation.intensity,
           structure: this.toApiStructure(effectiveRecommendation.structure),
         },
+        sport_options: this.getSportOptions(
+          profile?.primarySport,
+          profile?.preferredSports,
+        ),
         explanation: {
           simple: useSavedRecommendation
             ? savedRecommendation!.userFriendlyReason
@@ -266,7 +274,58 @@ export class TrainingController {
       throw new Error('活动不存在');
     }
 
-    return this.toApiActivity(activity);
+    const recentStart = new Date(activity.startTime);
+    recentStart.setDate(recentStart.getDate() - 28);
+    const recentSameSport = await this.prisma.activity.findMany({
+      where: this.realActivityWhere(userId, {
+        sport: activity.sport,
+        startTime: {
+          gte: recentStart,
+          lt: activity.startTime,
+        },
+      }),
+      orderBy: { startTime: 'desc' },
+      take: 20,
+    });
+
+    const presentation = this.toApiActivity(activity);
+    const analysis = this.buildActivityAnalysis(activity, recentSameSport);
+    const coach = await this.llmCoach.analyzeActivity({
+      userId,
+      fallbackText: analysis.fallbackText,
+      evidence: {
+        activity: presentation,
+        advanced_metrics: analysis.metrics,
+        training_effect: analysis.trainingEffect,
+        benefits: analysis.benefits,
+        cautions: analysis.cautions,
+        recovery: analysis.recovery,
+        comparison: analysis.comparison,
+        sources: analysis.sources,
+      },
+      ruleResult: {
+        load_level: analysis.loadLevel,
+        data_quality: analysis.dataQuality,
+      },
+    });
+
+    return {
+      ...presentation,
+      advancedMetrics: analysis.metrics,
+      dataSources: analysis.sources,
+      coachReview: {
+        summary: coach.text,
+        trainingEffect: analysis.trainingEffect,
+        benefits: analysis.benefits,
+        cautions: analysis.cautions,
+        recovery: analysis.recovery,
+        comparison: analysis.comparison,
+        dataQuality: analysis.dataQuality,
+        usedLlm: coach.usedLlm,
+        safetyFiltered: coach.safetyFiltered,
+        fallbackUsed: coach.fallbackUsed,
+      },
+    };
   }
 
   /**
@@ -499,35 +558,13 @@ export class TrainingController {
   @Get('model/data-coverage')
   async getModelDataCoverage() {
     const userId = await this.currentUser.getUserId();
-    const account = await this.prisma.connectedAccount.findUnique({
-      where: {
-        userId_provider: {
-          userId,
-          provider: 'intervals.icu',
-        },
-      },
-      include: {
-        _count: {
-          select: {
-            activities: {
-              where: {
-                providerActivityId: { not: { startsWith: 'demo-' } },
-              },
-            },
-          },
-        },
-        activities: {
-          where: {
-            providerActivityId: { not: { startsWith: 'demo-' } },
-          },
-          orderBy: { startTime: 'asc' },
-          take: 1,
-        },
-      },
-    });
     const since = new Date();
     since.setDate(since.getDate() - 180);
-    const [wellness, wellnessMetrics] = await Promise.all([
+    const [activities, wellness, wellnessMetrics] = await Promise.all([
+      this.prisma.activity.findMany({
+        where: this.realActivityWhere(userId),
+        orderBy: { startTime: 'asc' },
+      }),
       this.prisma.dailyAthleteState.findMany({
         where: { userId },
         orderBy: { date: 'desc' },
@@ -550,17 +587,17 @@ export class TrainingController {
     );
     const ctlAtlDays = wellness.filter((state) => state.fitness != null && state.fatigue != null).length;
     const subjectiveDays = wellness.filter((state) => state.subjectiveFatigue != null).length;
-    const earliestActivity = account?.activities[0]?.startTime;
+    const earliestActivity = activities[0]?.startTime;
     const historyDays = earliestActivity
       ? Math.ceil((Date.now() - earliestActivity.getTime()) / (1000 * 60 * 60 * 24))
       : 0;
 
     const available = [
-      { key: 'activities', label: '训练记录', count: account?._count.activities ?? 0, source: 'Intervals.icu activities' },
-      { key: 'ctl_atl_form', label: 'CTL / ATL / Form', count: ctlAtlDays, source: 'Intervals.icu wellness' },
+      { key: 'activities', label: '训练记录', count: activities.length, source: 'Garmin 中国区 + Intervals.icu 统一活动' },
+      { key: 'ctl_atl_form', label: 'CTL / ATL / Form', count: ctlAtlDays, source: 'AthleteOS 根据统一活动负荷计算' },
       { key: 'sleep', label: '睡眠评分', count: sleepDays, source: 'DailyWellnessMetric.sleepScore' },
       { key: 'sleep_duration', label: '睡眠时长', count: sleepDurationDays, source: 'DailyWellnessMetric.sleepSeconds' },
-      { key: 'hrv', label: 'HRV', count: hrvDays, source: 'DailyWellnessMetric，Intervals.icu 优先，Garmin Connect 作为补充' },
+      { key: 'hrv', label: 'HRV', count: hrvDays, source: 'Garmin 中国区优先，Intervals.icu 补充' },
     ];
 
     const missing = [
@@ -691,6 +728,30 @@ export class TrainingController {
     return '数据不足，建议谨慎参考';
   }
 
+  private getSportOptions(
+    primarySport?: string | null,
+    preferredSports?: unknown,
+  ) {
+    const supported = ['running', 'cycling', 'swimming', 'strength'];
+    const preferred = Array.isArray(preferredSports)
+      ? preferredSports.filter(
+          (sport): sport is string =>
+            typeof sport === 'string' && supported.includes(sport),
+        )
+      : [];
+    const ordered = [
+      primarySport && supported.includes(primarySport) ? primarySport : 'running',
+      ...preferred,
+      'running',
+      'cycling',
+    ];
+
+    return [...new Set(ordered)].map((sport) => ({
+      sport,
+      label: this.getSportLabel(sport),
+    }));
+  }
+
   private async findRecommendationForDate(userId: string, date: Date) {
     return this.prisma.dailyRecommendation.findUnique({
       where: {
@@ -720,6 +781,340 @@ export class TrainingController {
     if ((state.trainingRisk?.score ?? 0.3) < 0.5) reasons.push('当前疲劳处于可接受范围');
     if (state.hardSafety?.triggered) reasons.push('安全规则已限制训练强度');
     return reasons.slice(0, 3);
+  }
+
+  private buildActivityAnalysis(activity: any, recentSameSport: any[]) {
+    const raw = (activity.rawData as Record<string, any> | null) ?? {};
+    const metrics: Array<{
+      key: string;
+      group: string;
+      label: string;
+      value: string;
+      note?: string;
+    }> = [];
+    const addMetric = (
+      key: string,
+      group: string,
+      label: string,
+      value: string | number | null | undefined,
+      unit = '',
+      note?: string,
+    ) => {
+      if (value === null || value === undefined || value === '') return;
+      metrics.push({
+        key,
+        group,
+        label,
+        value: `${value}${unit}`,
+        ...(note ? { note } : {}),
+      });
+    };
+
+    const durationHours = Math.max(activity.durationSeconds, 1) / 3600;
+    const distanceKm = (activity.distanceMeters ?? 0) / 1000;
+    const averageSpeedMps =
+      raw.avg_speed ??
+      raw.average_speed ??
+      (activity.distanceMeters
+        ? activity.distanceMeters / Math.max(activity.durationSeconds, 1)
+        : null);
+    const averageSpeedKmh =
+      averageSpeedMps != null ? averageSpeedMps * 3.6 : null;
+    const maxSpeedMps = raw.max_speed;
+    const cadence = raw.average_cadence;
+    const calories = raw.calories;
+    const aerobicEffect =
+      raw.aerobicTrainingEffect ?? raw.sources?.['garmin.cn']?.aerobicTrainingEffect;
+    const anaerobicEffect =
+      raw.anaerobicTrainingEffect ?? raw.sources?.['garmin.cn']?.anaerobicTrainingEffect;
+    const garminLoad =
+      raw.garmin_training_load ??
+      raw.activityTrainingLoad ??
+      raw.sources?.['garmin.cn']?.activityTrainingLoad;
+    const workKj =
+      activity.avgPower != null
+        ? (activity.avgPower * activity.durationSeconds) / 1000
+        : null;
+    const variabilityIndex =
+      activity.normalizedPower != null && activity.avgPower
+        ? activity.normalizedPower / activity.avgPower
+        : null;
+    const elevationPerKm =
+      activity.elevationGain != null && distanceKm > 0
+        ? activity.elevationGain / distanceKm
+        : null;
+    const caloriesPerHour =
+      calories != null ? calories / durationHours : null;
+
+    addMetric('tss', '训练负荷', 'TSS', Math.round(activity.tss ?? 0), '', '统一活动负荷');
+    addMetric(
+      'garmin_load',
+      '训练负荷',
+      'Garmin 训练负荷',
+      garminLoad != null ? Math.round(garminLoad) : null,
+    );
+    addMetric(
+      'if',
+      '训练负荷',
+      '强度因子 IF',
+      activity.intensityFactor != null
+        ? activity.intensityFactor.toFixed(2)
+        : null,
+    );
+    addMetric(
+      'aerobic_effect',
+      '训练效果',
+      '有氧训练效果',
+      aerobicEffect != null ? Number(aerobicEffect).toFixed(1) : null,
+      '',
+      this.trainingEffectLabel(aerobicEffect),
+    );
+    addMetric(
+      'anaerobic_effect',
+      '训练效果',
+      '无氧训练效果',
+      anaerobicEffect != null ? Number(anaerobicEffect).toFixed(1) : null,
+      '',
+      this.trainingEffectLabel(anaerobicEffect),
+    );
+    addMetric(
+      'hr_range',
+      '心肺',
+      '心率跨度',
+      activity.avgHr != null && activity.maxHr != null
+        ? Math.round(activity.maxHr - activity.avgHr)
+        : null,
+      ' bpm',
+      activity.avgHr != null && activity.maxHr != null
+        ? `平均 ${Math.round(activity.avgHr)} / 最高 ${Math.round(activity.maxHr)}`
+        : undefined,
+    );
+    addMetric(
+      'cadence',
+      '技术',
+      activity.sport === 'cycling' ? '平均踏频' : '平均步频',
+      cadence != null ? Math.round(cadence) : null,
+      activity.sport === 'cycling' ? ' rpm' : ' spm',
+    );
+    addMetric(
+      'elevation_density',
+      '地形',
+      '每公里爬升',
+      elevationPerKm != null ? elevationPerKm.toFixed(1) : null,
+      ' m/km',
+    );
+    addMetric(
+      'energy_rate',
+      '能量',
+      '小时能耗',
+      caloriesPerHour != null ? Math.round(caloriesPerHour) : null,
+      ' kcal/h',
+    );
+
+    if (activity.sport === 'cycling') {
+      addMetric(
+        'average_speed',
+        '骑行效率',
+        '平均速度',
+        averageSpeedKmh != null ? averageSpeedKmh.toFixed(1) : null,
+        ' km/h',
+      );
+      addMetric(
+        'max_speed',
+        '骑行效率',
+        '最高速度',
+        maxSpeedMps != null ? (maxSpeedMps * 3.6).toFixed(1) : null,
+        ' km/h',
+      );
+      addMetric('work', '功率', '机械功', workKj != null ? Math.round(workKj) : null, ' kJ');
+      addMetric(
+        'variability_index',
+        '功率',
+        '功率变异指数 VI',
+        variabilityIndex != null ? variabilityIndex.toFixed(2) : null,
+        '',
+        variabilityIndex != null
+          ? variabilityIndex <= 1.05
+            ? '输出较稳定'
+            : '功率波动较明显'
+          : undefined,
+      );
+      addMetric(
+        'power_hr_efficiency',
+        '骑行效率',
+        '功率心率效率',
+        activity.avgPower && activity.avgHr
+          ? (activity.avgPower / activity.avgHr).toFixed(2)
+          : null,
+        ' W/bpm',
+      );
+    } else if (activity.sport === 'running') {
+      addMetric(
+        'pace',
+        '跑步效率',
+        '平均配速',
+        activity.avgPace ? this.formatPace(activity.avgPace) : null,
+      );
+      addMetric(
+        'running_power',
+        '跑步功率',
+        '平均跑步功率',
+        activity.avgPower != null ? Math.round(activity.avgPower) : null,
+        ' W',
+      );
+      addMetric(
+        'running_normalized_power',
+        '跑步功率',
+        '标准化跑步功率',
+        activity.normalizedPower != null
+          ? Math.round(activity.normalizedPower)
+          : null,
+        ' W',
+      );
+      addMetric(
+        'running_power_variability',
+        '跑步功率',
+        '功率波动 NP/Avg',
+        variabilityIndex != null ? variabilityIndex.toFixed(2) : null,
+        '',
+        variabilityIndex != null
+          ? variabilityIndex <= 1.08
+            ? '输出较稳定'
+            : '受配速或地形变化影响较明显'
+          : undefined,
+      );
+      addMetric(
+        'speed_hr_efficiency',
+        '跑步效率',
+        '速度心率效率',
+        averageSpeedKmh && activity.avgHr
+          ? (averageSpeedKmh / activity.avgHr).toFixed(3)
+          : null,
+        ' km/h/bpm',
+      );
+      addMetric(
+        'stride_frequency',
+        '跑步技术',
+        '每分钟总步数',
+        cadence != null ? Math.round(cadence) : null,
+        ' spm',
+      );
+    }
+
+    const averageRecentTss = recentSameSport.length
+      ? recentSameSport.reduce((sum, item) => sum + (item.tss ?? 0), 0) /
+        recentSameSport.length
+      : null;
+    const comparison =
+      averageRecentTss != null && averageRecentTss > 0
+        ? activity.tss >= averageRecentTss * 1.25
+          ? `本次负荷比近 28 天同项目平均值高 ${Math.round(
+              ((activity.tss - averageRecentTss) / averageRecentTss) * 100,
+            )}%`
+          : activity.tss <= averageRecentTss * 0.75
+            ? `本次负荷比近 28 天同项目平均值低 ${Math.round(
+                ((averageRecentTss - activity.tss) / averageRecentTss) * 100,
+              )}%`
+            : '本次负荷接近近 28 天同项目平均水平'
+        : '同项目历史样本不足，暂不做趋势比较';
+
+    const loadLevel =
+      activity.tss >= 100 ? 'very_high' : activity.tss >= 70 ? 'high' : activity.tss >= 35 ? 'moderate' : 'low';
+    const trainingEffect = this.activityTrainingEffect(
+      activity.sport,
+      aerobicEffect,
+      anaerobicEffect,
+      loadLevel,
+    );
+    const benefits = this.activityBenefits(
+      activity.sport,
+      aerobicEffect,
+      anaerobicEffect,
+      activity.intensityFactor,
+    );
+    const cautions: string[] = [];
+    if (activity.tss >= 100) cautions.push('单次负荷较高，后续 24–48 小时应避免连续安排同类高强度训练。');
+    if (activity.intensityFactor >= 0.9) cautions.push('强度因子较高，恢复不足时不宜立即叠加阈值或冲刺训练。');
+    if (aerobicEffect >= 4.5) cautions.push('有氧刺激接近过度区间，注意补充能量、睡眠与低强度恢复。');
+    if (activity.sport === 'cycling' && activity.avgPower == null) {
+      cautions.push('本次缺少功率数据，强度评价主要依据心率、速度和训练负荷。');
+    }
+    if (cautions.length === 0) cautions.push('未发现明显异常负荷信号，仍应结合主观疲劳和疼痛反馈调整后续训练。');
+
+    const recovery =
+      activity.tss >= 100
+        ? ['优先补充碳水和水分。', '次日以休息、步行或短时恢复训练为主。', '关注睡眠、HRV 与腿部酸痛变化。']
+        : activity.tss >= 60
+          ? ['训练后补充水分和正常正餐。', '次日可安排轻松有氧或技术训练。', '如果疲劳明显，减少下一次训练时长。']
+          : ['保持正常补水和饮食。', '可按计划继续训练，但避免突然提高强度。'];
+    const sources = Object.keys(raw.providerIds ?? raw.sources ?? {}).map((source) =>
+      source === 'garmin.cn' ? 'Garmin 中国区' : source === 'intervals.icu' ? 'Intervals.icu' : source,
+    );
+    const dataQuality =
+      metrics.length >= 9 && sources.length >= 2
+        ? 'high'
+        : metrics.length >= 6
+          ? 'medium'
+          : 'limited';
+    const fallbackText = [
+      `这次${this.getSportLabel(activity.sport)}形成了${trainingEffect}。`,
+      benefits[0],
+      comparison,
+      cautions[0],
+      recovery[0],
+    ].join(' ');
+
+    return {
+      metrics,
+      trainingEffect,
+      benefits,
+      cautions,
+      recovery,
+      comparison,
+      sources,
+      dataQuality,
+      loadLevel,
+      fallbackText,
+    };
+  }
+
+  private activityTrainingEffect(
+    sport: string,
+    aerobicEffect?: number,
+    anaerobicEffect?: number,
+    loadLevel?: string,
+  ): string {
+    if ((anaerobicEffect ?? 0) >= 3.5) return '明显的无氧与高强度刺激';
+    if ((aerobicEffect ?? 0) >= 4) return '较强的有氧能力与阈值刺激';
+    if ((aerobicEffect ?? 0) >= 3) return '有效的有氧耐力提升刺激';
+    if (loadLevel === 'low') return sport === 'cycling' ? '低负荷恢复与骑行技术刺激' : '低负荷恢复与跑步经济性刺激';
+    return '中等强度的基础耐力刺激';
+  }
+
+  private activityBenefits(
+    sport: string,
+    aerobicEffect?: number,
+    anaerobicEffect?: number,
+    intensityFactor?: number,
+  ): string[] {
+    const benefits = sport === 'cycling'
+      ? ['有助于提升持续踩踏能力和下肢有氧耐力。']
+      : sport === 'running'
+        ? ['有助于提升跑步有氧耐力和配速维持能力。']
+        : ['有助于积累专项训练量和基础体能。'];
+    if ((aerobicEffect ?? 0) >= 3) benefits.push('本次刺激足以促进心肺适应，但需要恢复后才能充分吸收。');
+    if ((anaerobicEffect ?? 0) >= 2.5) benefits.push('包含一定无氧刺激，有助于改善短时高输出和速度变化能力。');
+    if ((intensityFactor ?? 0) >= 0.8) benefits.push('整体强度较集中，对专项耐力和抗疲劳能力有积极作用。');
+    return benefits;
+  }
+
+  private trainingEffectLabel(value?: number): string | undefined {
+    if (value == null) return undefined;
+    if (value >= 5) return '刺激过强';
+    if (value >= 4) return '高度提升';
+    if (value >= 3) return '有效提升';
+    if (value >= 2) return '维持能力';
+    return '轻微刺激';
   }
 
   private toApiActivity(activity: any) {
