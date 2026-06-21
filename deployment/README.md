@@ -40,6 +40,8 @@ openssl rand -base64 32
 编辑 `deployment/.env.production`：
 
 - `DOMAIN` 与 `CORS_ORIGINS` 改成真实 HTTPS 域名。
+- `COOKIE_SECURE` 在 HTTPS 部署中保持 `true`。仅临时使用公网 IP + HTTP
+  调试时设为 `false`，域名可用后应立即恢复。
 - 第一段随机值写入 `JWT_SECRET`。
 - 第二段随机值写入 `CREDENTIAL_ENCRYPTION_KEY`。
 - 不要提交 `.env.production`。

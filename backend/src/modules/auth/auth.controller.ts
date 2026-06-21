@@ -114,9 +114,13 @@ export class AuthController {
   }
 
   private cookieOptions() {
+    const secureOverride = this.config.get<string>('COOKIE_SECURE');
     return {
       httpOnly: true,
-      secure: this.config.get('NODE_ENV') === 'production',
+      secure:
+        secureOverride == null
+          ? this.config.get('NODE_ENV') === 'production'
+          : secureOverride === 'true',
       sameSite: 'lax' as const,
       path: '/api/auth',
     };
