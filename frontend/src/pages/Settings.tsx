@@ -15,6 +15,8 @@ import {
   KeyRound,
   Bot,
   LogOut,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import Layout from '../components/Layout'
 import {
@@ -93,6 +95,8 @@ const Settings = () => {
   const [llmBaseUrl, setLlmBaseUrl] = useState('')
   const [llmApiKey, setLlmApiKey] = useState('')
   const [llmEnabled, setLlmEnabled] = useState(false)
+  const [garminExpanded, setGarminExpanded] = useState(false)
+  const [llmExpanded, setLlmExpanded] = useState(false)
 
   const refreshData = async () => {
     const [syncData, settingsData] = await Promise.all([
@@ -112,6 +116,8 @@ const Settings = () => {
     setLlmModel(settingsData.llm_model || '')
     setLlmBaseUrl(settingsData.llm_base_url || '')
     setLlmEnabled(Boolean(settingsData.llm_enabled))
+    setGarminExpanded(!settingsData.has_garmin_credentials)
+    setLlmExpanded(!settingsData.has_llm_api_key)
   }
 
   useEffect(() => {
@@ -167,6 +173,7 @@ const Settings = () => {
       setGarminEmail(updated.garmin_email || '')
       setGarminAuthDomain(updated.garmin_auth_domain || 'garmin.com')
       setGarminPassword('')
+      setGarminExpanded(false)
     } catch (err: any) {
       console.error('保存 Garmin 失败', err)
       alert(`保存失败：${err.message || '请检查账号信息'}`)
@@ -217,6 +224,7 @@ const Settings = () => {
       })
       setSettings(updated)
       setLlmApiKey('')
+      setLlmExpanded(false)
     } catch (err: any) {
       console.error('保存 LLM 配置失败', err)
       alert(`保存失败：${err.message || '请检查 LLM 配置'}`)
@@ -289,27 +297,37 @@ const Settings = () => {
         </div>
 
         <div className="card mb-4">
-          <div className="flex items-start gap-3 mb-4">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <Watch size={20} className="text-primary" />
+          <div className={`flex items-start justify-between gap-3 ${garminExpanded ? 'mb-4' : ''}`}>
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Watch size={20} className="text-primary" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-medium text-text-primary">
+                  Garmin 中国区主数据源
+                </h3>
+                <p className="text-sm text-text-secondary">
+                  {settings.has_garmin_credentials
+                    ? `已配置 · ${garminAuthDomain === 'garmin.cn' ? '中国区' : '国际区'} · ${garminEmail}`
+                    : '配置后同步活动、睡眠、HRV、静息心率和训练准备度'}
+                </p>
+                <p className="text-xs text-text-secondary mt-0.5">
+                  {settings.primary_data_source === 'garmin.cn' ? '当前主数据源 · ' : ''}
+                  上次同步：{formatDateTime(settings.garmin_last_sync_at)}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-medium text-text-primary">
-                Garmin 中国区主数据源
-              </h3>
-              <p className="text-sm text-text-secondary">
-                {settings.has_garmin_credentials
-                  ? `已配置 · ${settings.garmin_sync_message}`
-                  : '配置后同步活动、睡眠、HRV、静息心率和训练准备度'}
-              </p>
-              <p className="text-xs text-text-secondary mt-0.5">
-                {settings.primary_data_source === 'garmin.cn' ? '当前主数据源 · ' : ''}
-                上次同步：{formatDateTime(settings.garmin_last_sync_at)}
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={() => setGarminExpanded((value) => !value)}
+              className="p-2 text-primary hover:bg-background-weak rounded-lg"
+              title={garminExpanded ? '收起 Garmin 配置' : '编辑 Garmin 配置'}
+            >
+              {garminExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
           </div>
 
-          <div className="space-y-3">
+          {garminExpanded && <div className="space-y-3">
             <label className="block">
               <span className="text-sm text-text-secondary">Garmin 服务区域</span>
               <select
@@ -352,9 +370,9 @@ const Settings = () => {
                 inputMode="numeric"
               />
             </label>
-          </div>
+          </div>}
 
-          <div className="mt-4 flex gap-3">
+          {garminExpanded ? <div className="mt-4 flex gap-3">
             <button
               onClick={handleSaveGarmin}
               disabled={savingGarmin || !garminEmail.trim()}
@@ -370,11 +388,20 @@ const Settings = () => {
               {syncingGarmin ? <Sync size={16} className="animate-spin" /> : <KeyRound size={16} />}
               <span>{syncingGarmin ? '同步中...' : '同步 HRV'}</span>
             </button>
-          </div>
+          </div> : settings.has_garmin_credentials && (
+            <button
+              onClick={handleGarminSync}
+              disabled={syncingGarmin}
+              className="mt-4 w-full border border-primary text-primary rounded-lg py-2 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <Sync size={16} className={syncingGarmin ? 'animate-spin' : ''} />
+              {syncingGarmin ? '同步中...' : '立即同步 Garmin'}
+            </button>
+          )}
         </div>
 
         <div className="card mb-4">
-          <div className="flex items-start justify-between gap-3 mb-4">
+          <div className={`flex items-start justify-between gap-3 ${llmExpanded ? 'mb-4' : ''}`}>
             <div className="flex items-start gap-3">
               <div className="p-2 bg-primary/10 rounded-lg">
                 <Bot size={20} className="text-primary" />
@@ -395,17 +422,27 @@ const Settings = () => {
               </div>
             </div>
             <button
+              type="button"
+              onClick={() => setLlmExpanded((value) => !value)}
+              className="p-2 text-primary hover:bg-background-weak rounded-lg"
+              title={llmExpanded ? '收起 LLM 配置' : '编辑 LLM 配置'}
+            >
+              {llmExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+          </div>
+
+          {llmExpanded && <>
+          <div className="flex items-center justify-between rounded-lg bg-background-weak px-3 py-2 mb-3">
+            <span className="text-sm font-medium text-text-primary">启用 AI Coach</span>
+            <button
               onClick={() => setLlmEnabled((value) => !value)}
               className={`relative h-7 w-12 rounded-full transition-colors ${llmEnabled ? 'bg-primary' : 'bg-border'}`}
               aria-pressed={llmEnabled}
               aria-label="启用 AI Coach LLM"
             >
-              <span
-                className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-transform ${llmEnabled ? 'translate-x-5' : 'translate-x-1'}`}
-              />
+              <span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-transform ${llmEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
             </button>
           </div>
-
           <div className="space-y-3">
             <label className="block">
               <span className="text-sm text-text-secondary">Provider</span>
@@ -468,6 +505,7 @@ const Settings = () => {
           >
             {savingLlm ? '保存中...' : '保存 LLM 配置'}
           </button>
+          </>}
         </div>
 
         <div className="space-y-2 mb-6">
@@ -508,7 +546,11 @@ const Settings = () => {
               </div>
               <div>
                 <span className="font-medium text-text-primary">训练偏好</span>
-                <p className="text-xs text-text-secondary">{sportLabel[settings.primary_sport] ?? settings.primary_sport} · 每周 {settings.weekly_available_days} 天</p>
+                <p className="text-xs text-text-secondary">
+                  {(settings.preferred_sports || [settings.primary_sport])
+                    .map((sport) => sportLabel[sport] ?? sport)
+                    .join('、')} · 每周 {settings.weekly_available_days} 天
+                </p>
               </div>
             </div>
             <ChevronRight size={20} className="text-text-secondary" />

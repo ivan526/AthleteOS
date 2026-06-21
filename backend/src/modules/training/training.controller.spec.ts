@@ -102,15 +102,15 @@ describe('TrainingController activity presentation', () => {
     expect(result.benefits[0]).toContain('跑步');
   });
 
-  it('returns the primary and preferred sports as stable today options', () => {
+  it('returns only the user-selected sports in preference order', () => {
     const options = (controller as any).getSportOptions(
       'cycling',
       ['running', 'cycling', 'swimming', 'unsupported'],
     );
 
     expect(options).toEqual([
-      { sport: 'cycling', label: '骑行' },
       { sport: 'running', label: '跑步' },
+      { sport: 'cycling', label: '骑行' },
       { sport: 'swimming', label: '游泳' },
     ]);
   });

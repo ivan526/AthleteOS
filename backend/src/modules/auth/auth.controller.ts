@@ -25,7 +25,7 @@ export class AuthController {
   @Public()
   @Post('register')
   async register(
-    @Body() body: { email: string; password: string; name?: string },
+    @Body() body: { email: string; password: string; name?: string; remember_me?: boolean },
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
@@ -33,14 +33,19 @@ export class AuthController {
     this.rateLimit.assertAllowed(key);
     const result = await this.authService.register(body, this.context(request));
     this.rateLimit.clear(key);
-    this.setRefreshCookie(response, result.refreshToken, result.refreshExpiresAt);
+    this.setRefreshCookie(
+      response,
+      result.refreshToken,
+      result.refreshExpiresAt,
+      body.remember_me !== false,
+    );
     return this.authResponse(result, request);
   }
 
   @Public()
   @Post('login')
   async login(
-    @Body() body: { email: string; password: string },
+    @Body() body: { email: string; password: string; remember_me?: boolean },
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
@@ -48,14 +53,19 @@ export class AuthController {
     this.rateLimit.assertAllowed(key);
     const result = await this.authService.login(body, this.context(request));
     this.rateLimit.clear(key);
-    this.setRefreshCookie(response, result.refreshToken, result.refreshExpiresAt);
+    this.setRefreshCookie(
+      response,
+      result.refreshToken,
+      result.refreshExpiresAt,
+      body.remember_me !== false,
+    );
     return this.authResponse(result, request);
   }
 
   @Public()
   @Post('refresh')
   async refresh(
-    @Body() body: { refresh_token?: string },
+    @Body() body: { refresh_token?: string; remember_me?: boolean },
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
@@ -63,7 +73,12 @@ export class AuthController {
       body.refresh_token ?? this.readCookie(request, 'athleteos_refresh'),
       this.context(request),
     );
-    this.setRefreshCookie(response, result.refreshToken, result.refreshExpiresAt);
+    this.setRefreshCookie(
+      response,
+      result.refreshToken,
+      result.refreshExpiresAt,
+      body.remember_me !== false,
+    );
     return this.authResponse(result, request);
   }
 
@@ -90,10 +105,11 @@ export class AuthController {
     response: Response,
     token: string,
     expires: Date,
+    remember: boolean,
   ): void {
     response.cookie('athleteos_refresh', token, {
       ...this.cookieOptions(),
-      expires,
+      ...(remember ? { expires } : {}),
     });
   }
 

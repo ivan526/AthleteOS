@@ -39,16 +39,14 @@ const PreferencesSettings = () => {
     e.preventDefault()
     try {
       setSaving(true)
-      const preferredSports = formData.preferredSports.includes(formData.primarySport)
-        ? formData.preferredSports
-        : [formData.primarySport, ...formData.preferredSports]
+      const preferredSports = formData.preferredSports
       await updateSettings({
         primary_sport: formData.primarySport,
         weekly_available_days: formData.weeklyAvailableDays,
         preferred_sports: preferredSports,
       })
       setFormData((current) => ({ ...current, preferredSports }))
-      alert('训练偏好已保存，今日建议可按这些项目切换')
+      alert('训练偏好已保存，今日页只会显示这些运动项目')
     } catch (error: any) {
       alert(`保存失败: ${error.message}`)
     } finally {
@@ -59,9 +57,12 @@ const PreferencesSettings = () => {
   const toggleSport = (sport: string) => {
     if (formData.preferredSports.includes(sport)) {
       if (formData.preferredSports.length > 1) {
+        const nextSports = formData.preferredSports.filter(s => s !== sport)
         setFormData({
           ...formData,
-          preferredSports: formData.preferredSports.filter(s => s !== sport)
+          preferredSports: nextSports,
+          primarySport:
+            formData.primarySport === sport ? nextSports[0] : formData.primarySport,
         })
       }
     } else {
@@ -114,7 +115,13 @@ const PreferencesSettings = () => {
                         name="primarySport"
                         value={sport.value}
                         checked={formData.primarySport === sport.value}
-                        onChange={(e) => setFormData({ ...formData, primarySport: e.target.value })}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          primarySport: e.target.value,
+                          preferredSports: formData.preferredSports.includes(e.target.value)
+                            ? formData.preferredSports
+                            : [...formData.preferredSports, e.target.value],
+                        })}
                         className="sr-only"
                       />
                       <div className="text-2xl mb-1">{sport.emoji}</div>
@@ -126,8 +133,11 @@ const PreferencesSettings = () => {
 
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-2">
-                  喜欢的运动项目（可多选）
+                  今日建议运动项目（可多选）
                 </label>
+                <p className="text-xs text-text-secondary mb-2">
+                  今日训练页只会展示这里选中的运动类型。
+                </p>
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { value: 'running', label: '跑步', emoji: '🏃' },

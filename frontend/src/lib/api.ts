@@ -3,7 +3,12 @@
  */
 
 const API_BASE_URL = '/api'
-let accessToken = sessionStorage.getItem('athleteos_access_token')
+const REMEMBER_SESSION_KEY = 'athleteos_remember_session'
+const ACCESS_TOKEN_KEY = 'athleteos_access_token'
+let rememberSession = localStorage.getItem(REMEMBER_SESSION_KEY) !== 'false'
+let accessToken =
+  localStorage.getItem(ACCESS_TOKEN_KEY) ??
+  sessionStorage.getItem(ACCESS_TOKEN_KEY)
 let refreshPromise: Promise<string | null> | null = null
 
 export interface ApiResponse<T = any> {
@@ -176,18 +181,26 @@ export interface AuthResponse {
 
 function storeAccessToken(token: string | null) {
   accessToken = token
+  localStorage.removeItem(ACCESS_TOKEN_KEY)
+  sessionStorage.removeItem(ACCESS_TOKEN_KEY)
   if (token) {
-    sessionStorage.setItem('athleteos_access_token', token)
-  } else {
-    sessionStorage.removeItem('athleteos_access_token')
+    const storage = rememberSession ? localStorage : sessionStorage
+    storage.setItem(ACCESS_TOKEN_KEY, token)
   }
+}
+
+function setRememberSession(remember: boolean) {
+  rememberSession = remember
+  localStorage.setItem(REMEMBER_SESSION_KEY, String(remember))
 }
 
 export async function registerUser(data: {
   email: string
   password: string
   name?: string
+  remember_me?: boolean
 }): Promise<AuthResponse> {
+  setRememberSession(data.remember_me !== false)
   const result = await request<AuthResponse>(
     '/auth/register',
     { method: 'POST', body: JSON.stringify(data) },
@@ -200,7 +213,9 @@ export async function registerUser(data: {
 export async function loginUser(data: {
   email: string
   password: string
+  remember_me?: boolean
 }): Promise<AuthResponse> {
+  setRememberSession(data.remember_me !== false)
   const result = await request<AuthResponse>(
     '/auth/login',
     { method: 'POST', body: JSON.stringify(data) },
@@ -216,7 +231,7 @@ export async function refreshAccessToken(): Promise<string | null> {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: '{}',
+    body: JSON.stringify({ remember_me: rememberSession }),
   })
     .then(async (response) => {
       if (!response.ok) return null

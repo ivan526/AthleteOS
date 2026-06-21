@@ -18,7 +18,7 @@ import {
 interface AuthContextValue {
   user: AuthUser | null
   loading: boolean
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string, remember?: boolean) => Promise<void>
   register: (email: string, password: string, name?: string) => Promise<void>
   logout: () => Promise<void>
 }
@@ -52,8 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       loading,
-      login: async (email, password) => {
-        const result = await loginUser({ email, password })
+      login: async (email, password, remember = true) => {
+        const result = await loginUser({ email, password, remember_me: remember })
         setUser(result.user)
       },
       register: async (email, password, name) => {

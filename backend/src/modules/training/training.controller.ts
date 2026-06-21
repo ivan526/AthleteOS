@@ -739,12 +739,9 @@ export class TrainingController {
             typeof sport === 'string' && supported.includes(sport),
         )
       : [];
-    const ordered = [
-      primarySport && supported.includes(primarySport) ? primarySport : 'running',
-      ...preferred,
-      'running',
-      'cycling',
-    ];
+    const fallback =
+      primarySport && supported.includes(primarySport) ? primarySport : 'running';
+    const ordered = preferred.length > 0 ? preferred : [fallback];
 
     return [...new Set(ordered)].map((sport) => ({
       sport,

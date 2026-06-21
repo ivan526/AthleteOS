@@ -7,8 +7,13 @@ export default function Login() {
   const { user, login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(
+    () => localStorage.getItem('athleteos_remembered_email') ?? '',
+  )
   const [password, setPassword] = useState('')
+  const [remember, setRemember] = useState(
+    () => localStorage.getItem('athleteos_remember_session') !== 'false',
+  )
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -20,7 +25,12 @@ export default function Login() {
     setError('')
     setSubmitting(true)
     try {
-      await login(email, password)
+      await login(email, password, remember)
+      if (remember) {
+        localStorage.setItem('athleteos_remembered_email', email.trim())
+      } else {
+        localStorage.removeItem('athleteos_remembered_email')
+      }
       const target = (location.state as { from?: string } | null)?.from ?? '/today'
       navigate(target, { replace: true })
     } catch (reason: any) {
@@ -73,6 +83,15 @@ export default function Login() {
                 {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
               </button>
             </div>
+          </label>
+          <label className="flex items-center gap-3 text-sm text-text-primary cursor-pointer">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(event) => setRemember(event.target.checked)}
+              className="h-4 w-4 accent-primary"
+            />
+            <span>记住登录状态</span>
           </label>
           {error && <p className="text-sm text-status-danger">{error}</p>}
           <button className="btn-primary w-full" disabled={submitting}>

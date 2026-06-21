@@ -3,12 +3,15 @@ import { ChevronDown, ChevronUp, Info, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import FeedbackModal from '../components/FeedbackModal'
+import SleepTrendCard from '../components/SleepTrendCard'
 import {
   getFeedbackHistory,
   getTodayData,
+  getWellnessHistory,
   submitFeedback,
   type FeedbackHistoryItem,
   type TodayResponse,
+  type WellnessHistoryItem,
 } from '../lib/api'
 
 const Today = () => {
@@ -20,6 +23,7 @@ const Today = () => {
   const [feedbackHistory, setFeedbackHistory] = useState<FeedbackHistoryItem[]>([])
   const [adjustedMessage, setAdjustedMessage] = useState('')
   const [switchingSport, setSwitchingSport] = useState<string | null>(null)
+  const [wellness, setWellness] = useState<WellnessHistoryItem[]>([])
   const [feedbackModal, setFeedbackModal] = useState<{
     isOpen: boolean
     type: string
@@ -34,12 +38,14 @@ const Today = () => {
     try {
       setLoading(true)
       setError(null)
-      const [result, history] = await Promise.all([
+      const [result, history, wellnessHistory] = await Promise.all([
         getTodayData(),
         getFeedbackHistory(20),
+        getWellnessHistory(14).catch(() => []),
       ])
       setData(result)
       setFeedbackHistory(history)
+      setWellness(wellnessHistory)
       if (resetAdjusted) setShowAdjusted(false)
     } catch (err: any) {
       setError(err.message || '加载失败，请稍后重试')
@@ -229,6 +235,8 @@ const Today = () => {
             <p className="text-base text-text-primary mt-2">{data.explanation.simple}</p>
           </div>
         </div>
+
+        <SleepTrendCard items={wellness} />
 
         {/* 训练建议卡片 */}
         <div className="card mb-4">
