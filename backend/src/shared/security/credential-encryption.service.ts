@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   createCipheriv,
@@ -10,8 +10,12 @@ import {
 const PREFIX = 'enc:v1:';
 
 @Injectable()
-export class CredentialEncryptionService {
+export class CredentialEncryptionService implements OnModuleInit {
   constructor(private readonly config: ConfigService) {}
+
+  onModuleInit(): void {
+    this.key();
+  }
 
   encrypt(value: string | null | undefined): string | null {
     if (!value) return value ?? null;

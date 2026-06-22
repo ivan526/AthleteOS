@@ -32,6 +32,20 @@ describe('Authentication security primitives', () => {
     expect(service.decrypt(encrypted)).toBe('provider-secret');
   });
 
+  it('rejects an invalid credential key during production startup', () => {
+    const service = new CredentialEncryptionService(
+      new ConfigService({
+        NODE_ENV: 'production',
+        JWT_SECRET: 'test-secret-with-at-least-thirty-two-characters',
+        CREDENTIAL_ENCRYPTION_KEY: '0123456789abcdef'.repeat(3) + '0123456789abcde',
+      }),
+    );
+
+    expect(() => service.onModuleInit()).toThrow(
+      'CREDENTIAL_ENCRYPTION_KEY must be a 32-byte base64 or 64-character hex key',
+    );
+  });
+
   it('attaches only the validated session user to a protected request', async () => {
     const tokenService = new TokenService(config);
     const authService = {

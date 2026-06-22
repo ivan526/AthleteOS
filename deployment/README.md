@@ -34,7 +34,7 @@ cd /opt/athleteos
 ```bash
 cp deployment/.env.production.example deployment/.env.production
 openssl rand -hex 32
-openssl rand -base64 32
+openssl rand -hex 32
 ```
 
 编辑 `deployment/.env.production`：
@@ -43,7 +43,8 @@ openssl rand -base64 32
 - `COOKIE_SECURE` 在 HTTPS 部署中保持 `true`。仅临时使用公网 IP + HTTP
   调试时设为 `false`，域名可用后应立即恢复。
 - 第一段随机值写入 `JWT_SECRET`。
-- 第二段随机值写入 `CREDENTIAL_ENCRYPTION_KEY`。
+- 第二段随机值写入 `CREDENTIAL_ENCRYPTION_KEY`。该值必须是完整的 64 位
+  十六进制字符串；也兼容解码后恰好 32 字节的 Base64 字符串。
 - 不要提交 `.env.production`。
 - 邀请测试阶段建议先设置 `ALLOW_REGISTRATION=false`，需要创建新用户时短暂
   开启注册，完成后再关闭。

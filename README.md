@@ -110,8 +110,11 @@ npm install
 ```dotenv
 DATABASE_URL="file:./dev.db"
 JWT_SECRET="请替换为至少32位随机字符串"
-CREDENTIAL_ENCRYPTION_KEY="请替换为32字节随机密钥"
+CREDENTIAL_ENCRYPTION_KEY="请填写 openssl rand -hex 32 生成的64位十六进制密钥"
 ```
+
+已有数据库必须继续使用原来的 `CREDENTIAL_ENCRYPTION_KEY`，不能重新生成，
+否则已保存的数据源和 LLM 凭证无法解密。
 
 然后生成 Prisma Client 并执行迁移：
 

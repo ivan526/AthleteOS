@@ -88,6 +88,14 @@ cp backend/prisma/dev.db "/home/ubuntu/backups/athleteos-$stamp/dev.db"
 Git 仓库。丢失 `CREDENTIAL_ENCRYPTION_KEY` 后，已保存的数据源和 LLM 凭证
 无法解密。
 
+`deployment/update-server.sh` 会在拉取和重启前校验密钥格式。出现格式错误时，
+应从与当前数据库配套的备份中恢复原密钥，不能直接生成新密钥，否则已有凭证
+仍然无法解密。推荐使用以下命令生成新环境的 64 位十六进制密钥：
+
+```bash
+openssl rand -hex 32
+```
+
 ## 回滚
 
 先查看更新脚本产生的备份：

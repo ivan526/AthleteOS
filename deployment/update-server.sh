@@ -10,6 +10,46 @@ BACKUP_DIR="$BACKUP_ROOT/athleteos-$STAMP"
 
 cd "$APP_DIR"
 
+validate_credential_encryption_key() {
+  local env_file="$APP_DIR/backend/.env"
+  local credential_key
+  local decoded_length
+
+  if [ ! -f "$env_file" ]; then
+    echo "Refusing to update: $env_file does not exist." >&2
+    return 1
+  fi
+
+  credential_key="$(
+    sed -n 's/^CREDENTIAL_ENCRYPTION_KEY=//p' "$env_file" |
+      tail -n 1 |
+      tr -d '\r'
+  )"
+  credential_key="${credential_key#\"}"
+  credential_key="${credential_key%\"}"
+  credential_key="${credential_key#\'}"
+  credential_key="${credential_key%\'}"
+
+  if [[ "$credential_key" =~ ^[0-9a-fA-F]{64}$ ]]; then
+    return 0
+  fi
+
+  if decoded_length="$(
+    printf '%s' "$credential_key" |
+      base64 --decode 2>/dev/null |
+      wc -c |
+      tr -d '[:space:]'
+  )" && [ "$decoded_length" = "32" ]; then
+    return 0
+  fi
+
+  echo "Refusing to update: CREDENTIAL_ENCRYPTION_KEY must be a 32-byte base64 or 64-character hex key." >&2
+  echo "Restore the key that matches the database; do not generate a replacement for an existing database." >&2
+  return 1
+}
+
+validate_credential_encryption_key
+
 if [ -n "$(git status --porcelain)" ]; then
   echo "Refusing to update: the server worktree has uncommitted changes." >&2
   git status --short >&2
