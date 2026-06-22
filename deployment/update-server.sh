@@ -48,7 +48,40 @@ validate_credential_encryption_key() {
   return 1
 }
 
+ensure_supported_node() {
+  local node_major=0
+  local nvm_node
+
+  if command -v node >/dev/null 2>&1; then
+    node_major="$(node --version | sed -E 's/^v([0-9]+).*/\1/')"
+  fi
+
+  if [ "$node_major" -lt 20 ]; then
+    nvm_node="$(
+      find "${NVM_DIR:-$HOME/.nvm}/versions/node" \
+        -path '*/bin/node' \
+        -type f \
+        -perm -u+x \
+        -print 2>/dev/null |
+        sort -V |
+        tail -n 1
+    )"
+    if [ -n "$nvm_node" ]; then
+      export PATH="$(dirname "$nvm_node"):$PATH"
+      node_major="$(node --version | sed -E 's/^v([0-9]+).*/\1/')"
+    fi
+  fi
+
+  if [ "$node_major" -lt 20 ]; then
+    echo "Refusing to update: Node.js 20 or newer is required." >&2
+    return 1
+  fi
+
+  echo "Using Node.js $(node --version)"
+}
+
 validate_credential_encryption_key
+ensure_supported_node
 
 if [ -n "$(git status --porcelain)" ]; then
   echo "Refusing to update: the server worktree has uncommitted changes." >&2

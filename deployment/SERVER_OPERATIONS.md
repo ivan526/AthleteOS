@@ -47,6 +47,9 @@ cd /home/ubuntu/workspace/athlete-os
 bash deployment/update-server.sh
 ```
 
+更新脚本要求 Node.js 20 或更高版本。如果非交互 SSH 环境中的系统 Node 版本
+较旧，脚本会自动选择 `$HOME/.nvm/versions/node` 中版本最高的可用 Node。
+
 脚本会依次：
 
 1. 检查服务器工作区是否干净。
