@@ -63,6 +63,29 @@ export class AuthController {
   }
 
   @Public()
+  @Post('wechat-login')
+  async wechatLogin(
+    @Body() body: { code: string; remember_me?: boolean },
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const key = `wechat-login:${this.clientIp(request)}`;
+    this.rateLimit.assertAllowed(key);
+    const result = await this.authService.loginWithWechat(
+      { code: body.code },
+      this.context(request),
+    );
+    this.rateLimit.clear(key);
+    this.setRefreshCookie(
+      response,
+      result.refreshToken,
+      result.refreshExpiresAt,
+      body.remember_me !== false,
+    );
+    return this.authResponse(result, request);
+  }
+
+  @Public()
   @Post('refresh')
   async refresh(
     @Body() body: { refresh_token?: string; remember_me?: boolean },

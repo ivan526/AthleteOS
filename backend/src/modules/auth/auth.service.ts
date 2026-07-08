@@ -1,7 +1,9 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -14,6 +16,21 @@ interface ClientContext {
   ipAddress?: string;
   userAgent?: string;
 }
+
+interface WechatSession {
+  openid: string;
+  unionid?: string;
+}
+
+interface WechatSessionResponse {
+  openid?: string;
+  session_key?: string;
+  unionid?: string;
+  errcode?: number;
+  errmsg?: string;
+}
+
+const WECHAT_MINIPROGRAM_PROVIDER = 'wechat_miniprogram';
 
 @Injectable()
 export class AuthService {
@@ -93,6 +110,87 @@ export class AuthService {
       });
     });
 
+    return this.createSession(user.id, context);
+  }
+
+  async loginWithWechat(input: { code: string }, context: ClientContext) {
+    if (!input.code?.trim()) {
+      throw new BadRequestException('微信登录 code 缺失');
+    }
+
+    const wechatSession = await this.fetchWechatSession(input.code.trim());
+    const existingAccount = await this.prisma.oAuthAccount.findUnique({
+      where: {
+        provider_providerUserId: {
+          provider: WECHAT_MINIPROGRAM_PROVIDER,
+          providerUserId: wechatSession.openid,
+        },
+      },
+      include: { user: true },
+    });
+
+    if (existingAccount) {
+      if (existingAccount.user.status !== 'active') {
+        throw new ForbiddenException('账户已停用');
+      }
+      await this.prisma.user.update({
+        where: { id: existingAccount.userId },
+        data: { lastLoginAt: new Date() },
+      });
+      return this.createSession(existingAccount.userId, context);
+    }
+
+    const user = await this.prisma.$transaction(async (prisma) => {
+      const bootstrapUser = await this.findWechatBootstrapUser(prisma);
+      if (bootstrapUser) {
+        const existingWechatBinding = await prisma.oAuthAccount.findUnique({
+          where: {
+            provider_userId: {
+              provider: WECHAT_MINIPROGRAM_PROVIDER,
+              userId: bootstrapUser.id,
+            },
+          },
+        });
+        if (existingWechatBinding) {
+          throw new ConflictException('该 AthleteOS 账号已绑定其他微信用户');
+        }
+
+        await prisma.oAuthAccount.create({
+          data: {
+            provider: WECHAT_MINIPROGRAM_PROVIDER,
+            providerUserId: wechatSession.openid,
+            unionId: wechatSession.unionid,
+            userId: bootstrapUser.id,
+          },
+        });
+        return bootstrapUser;
+      }
+
+      return prisma.user.create({
+        data: {
+          name: '微信用户',
+          athleteProfile: {
+            create: {
+              primarySport: 'running',
+              weeklyAvailableDays: 5,
+              preferredSports: ['running', 'cycling'],
+            },
+          },
+          oauthAccounts: {
+            create: {
+              provider: WECHAT_MINIPROGRAM_PROVIDER,
+              providerUserId: wechatSession.openid,
+              unionId: wechatSession.unionid,
+            },
+          },
+        },
+      });
+    });
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
     return this.createSession(user.id, context);
   }
 
@@ -219,6 +317,60 @@ export class AuthService {
   private refreshExpiry(): Date {
     const days = Number(this.config.get('REFRESH_TOKEN_TTL_DAYS', 30));
     return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  }
+
+  private async fetchWechatSession(code: string): Promise<WechatSession> {
+    const appId = this.config.get<string>('WECHAT_MINIPROGRAM_APPID');
+    const secret = this.config.get<string>('WECHAT_MINIPROGRAM_SECRET');
+    if (!appId || !secret) {
+      throw new InternalServerErrorException('微信小程序登录未配置');
+    }
+
+    const params = new URLSearchParams({
+      appid: appId,
+      secret,
+      js_code: code,
+      grant_type: 'authorization_code',
+    });
+    const response = await fetch(
+      `https://api.weixin.qq.com/sns/jscode2session?${params.toString()}`,
+    );
+    const data = (await response.json().catch(() => ({}))) as WechatSessionResponse;
+
+    if (!response.ok || data.errcode || !data.openid) {
+      throw new UnauthorizedException(
+        data.errmsg || '微信登录凭证校验失败',
+      );
+    }
+
+    return {
+      openid: data.openid,
+      unionid: data.unionid,
+    };
+  }
+
+  private async findWechatBootstrapUser(
+    prisma: Pick<
+      PrismaService,
+      'user'
+    >,
+  ): Promise<{ id: string; email: string | null; name: string | null; status: string } | null> {
+    const userId = this.config.get<string>('WECHAT_MINIPROGRAM_BIND_USER_ID')?.trim();
+    const email = this.config
+      .get<string>('WECHAT_MINIPROGRAM_BIND_USER_EMAIL', '')
+      .trim()
+      .toLowerCase();
+
+    const user = userId
+      ? await prisma.user.findUnique({ where: { id: userId } })
+      : email
+        ? await prisma.user.findUnique({ where: { email } })
+        : null;
+
+    if (user && user.status !== 'active') {
+      throw new ForbiddenException('绑定目标账户已停用');
+    }
+    return user;
   }
 
   private hashToken(token: string): string {
